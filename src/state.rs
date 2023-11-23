@@ -152,10 +152,7 @@ impl RouterState {
                 url: {
                     let mut url = self.router_url.clone();
                     url.set_path(API);
-                    url.query_pairs_mut()
-                        .clear()
-                        .append_pair(CODE, code)
-                        .finish();
+                    url.query_pairs_mut().append_pair(CODE, code).finish();
                     url
                 },
             })
@@ -168,7 +165,6 @@ impl RouterState {
         let mut url = route.url.clone();
         {
             let mut query = url.query_pairs_mut();
-            query.clear();
             route.params.iter().for_each(|(k, v)| {
                 query.append_pair(k, v);
             });
