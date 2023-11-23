@@ -1,4 +1,4 @@
-use crate::{state::RouteVerify, SERVER_CONFIG};
+use crate::{state::Route, SERVER_CONFIG};
 use axum::{
     http::{header::AUTHORIZATION, Request, StatusCode},
     middleware::Next,
@@ -29,7 +29,7 @@ pub async fn auth<B>(req: Request<B>, next: Next<B>) -> Result<Response, StatusC
 
 /// write new code table & redirect table to a file path
 pub async fn write_router_table<P: AsRef<Path>>(
-    router_table: &HashMap<String, RouteVerify>,
+    router_table: &HashMap<String, Route>,
     router_directory: P,
 ) -> Result<(), std::io::Error> {
     let timestamp = chrono::Local::now().to_rfc3339();
@@ -50,7 +50,7 @@ pub async fn write_router_table<P: AsRef<Path>>(
 /// It searches for a timestamp where *BOTH* table exists.
 pub async fn load_latest_router_table<P: AsRef<Path>>(
     router_directory: P,
-) -> Result<Option<(DateTime<FixedOffset>, HashMap<String, RouteVerify>)>, std::io::Error> {
+) -> Result<Option<(DateTime<FixedOffset>, HashMap<String, Route>)>, std::io::Error> {
     let mut latest = None;
     let mut dir = tokio::fs::read_dir(router_directory).await?;
     while let Some(entry) = dir.next_entry().await? {

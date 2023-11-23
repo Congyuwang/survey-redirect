@@ -14,7 +14,6 @@ pub mod utility;
 
 pub const EXTERNEL_ID: &str = "externalUserId";
 pub const API: &str = "api";
-pub const ID: &str = "id";
 pub const CODE: &str = "code";
 pub const CODE_LENGTH: usize = 64;
 pub const CONFIG_FILE_NAME: &str = "config.yaml";
