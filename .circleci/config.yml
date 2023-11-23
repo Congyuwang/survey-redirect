@@ -1,0 +1,28 @@
+version: 2.1
+
+jobs:
+  build:
+    parameters:
+      os:
+        type: string
+    docker:
+      - image: congyuwang/socket-manager-dev:<< parameters.os >>
+    steps:
+      - checkout
+      - run:
+          name: "Build"
+          command: |
+            cargo build --release
+            mv ./target/release/survey-redirect ./target/release/survey-redirect-x86_64-<< parameters.os >>
+      - store_artifacts:
+          name: "Save Binary"
+          path: ./target/release/survey-redirect-x86_64-<< parameters.os >>
+          destination: survey-redirect-x86_64-<< parameters.os >>
+
+workflows:
+  build-binary:
+    jobs:
+      - build:
+          matrix:
+            parameters:
+              os: ["jammy", "focal", "debian-10", "debian-11"]
