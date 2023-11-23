@@ -1,5 +1,6 @@
 use crate::{config::Config, state::RouterState};
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{get, put},
     Router,
 };
@@ -17,6 +18,7 @@ pub const API: &str = "api";
 pub const CODE: &str = "code";
 pub const CODE_LENGTH: usize = 64;
 pub const CONFIG_FILE_NAME: &str = "config.yaml";
+pub const BODY_LIMIT: usize = 512 * 1024 * 1024;
 
 #[macro_use]
 extern crate lazy_static;
@@ -61,7 +63,8 @@ async fn main() {
             "/routing_table",
             put(handler::put_routing_table).patch(handler::patch_routing_table),
         )
-        .layer(axum::middleware::from_fn(utility::auth));
+        .layer(axum::middleware::from_fn(utility::auth))
+        .layer(DefaultBodyLimit::max(BODY_LIMIT));
     let app = Router::new()
         .nest("/api", api)
         .nest("/admin", admin)
