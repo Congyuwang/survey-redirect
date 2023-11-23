@@ -12,7 +12,7 @@ pub mod handler;
 pub mod state;
 pub mod utility;
 
-pub const EXTERNEL_ID: &str = "ExternelId";
+pub const EXTERNEL_ID: &str = "externelUserId";
 pub const API: &str = "api";
 pub const ID: &str = "id";
 pub const CODE: &str = "code";

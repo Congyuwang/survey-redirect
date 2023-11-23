@@ -1,27 +1,12 @@
-use crate::state::{RouterState, StateError};
+use crate::state::{RedirectParams, Route, RouterState, StateError};
 use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Redirect, Response},
     Json,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+
 use tracing::{error, info, warn};
-use url::Url;
-
-#[derive(Deserialize, Serialize, Clone)]
-pub struct Route {
-    pub id: String,
-    pub url: Url,
-    pub params: HashMap<String, String>,
-}
-
-#[derive(Deserialize)]
-pub struct RedirectParams {
-    pub id: String,
-    pub code: String,
-}
 
 pub async fn redirect(
     State(state): State<RouterState>,

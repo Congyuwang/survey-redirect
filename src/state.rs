@@ -1,5 +1,4 @@
 use crate::{
-    handler::{RedirectParams, Route},
     utility::{load_latest_router_table, write_router_table},
     API, CODE, CODE_LENGTH, EXTERNEL_ID, ID,
 };
@@ -12,6 +11,19 @@ use std::{
 };
 use tracing::info;
 use url::Url;
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct Route {
+    pub id: String,
+    pub url: Url,
+    pub params: HashMap<String, String>,
+}
+
+#[derive(Deserialize)]
+pub struct RedirectParams {
+    pub id: String,
+    pub code: String,
+}
 
 #[derive(Clone)]
 pub struct RouterState {
@@ -156,8 +168,7 @@ impl RouterState {
             route_verify.route.params.iter().for_each(|(k, v)| {
                 query.append_pair(k, v);
             });
-            query.append_pair(EXTERNEL_ID, &route_verify.route.id);
-            query.append_pair(CODE, &route_verify.code);
+            query.append_pair(EXTERNEL_ID, &route_verify.code);
             query.finish();
         }
         url
