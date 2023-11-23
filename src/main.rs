@@ -33,7 +33,10 @@ lazy_static! {
 #[tokio::main]
 async fn main() {
     // configure log
-    let stdout_log = tracing_subscriber::fmt::layer().pretty();
+    let timer = tracing_subscriber::fmt::time::ChronoLocal::rfc_3339();
+    let stdout_log = tracing_subscriber::fmt::layer()
+        .pretty()
+        .with_timer(timer.clone());
     let log_file = OpenOptions::new()
         .create(true)
         .append(true)
@@ -41,6 +44,7 @@ async fn main() {
         .expect("failed to open log file");
     let log_to_file = tracing_subscriber::fmt::layer()
         .with_ansi(false)
+        .with_timer(timer)
         .with_writer(log_file);
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
