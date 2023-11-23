@@ -1,10 +1,12 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Callable
 import requests
 import json
 from dataclasses import dataclass, asdict
 from io import BytesIO
 from tqdm import tqdm
-from tqdm.utils import CallbackIOWrapper
+
+
+CHUNK_SIZE = 32 * 1024
 
 
 @dataclass
@@ -18,6 +20,20 @@ class Route:
         self.url = url
         self.params = params
 
+
+class ReaderWrapper(object):
+    def __init__(self, callback: Callable[[int], object], stream, length):
+        self.callback = callback
+        self.stream = stream
+        self.length = length
+
+    def read(self, __len: int = -1) -> bytes:
+        data = self.stream.read(__len)
+        self.callback(len(data))
+        return data
+
+    def __len__(self):
+        return self.length
 
 
 class ServeyRedirectSdk:
@@ -38,11 +54,16 @@ class ServeyRedirectSdk:
         """
         url = self.server_url + "/admin/get_links"
         headers = {"Authorization": self.admin_token}
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(response.status_code, response.text)
+        response = requests.get(url, stream=True, headers=headers)
+        data = bytearray()
+        total_size = int(response.headers.get('content-length', 0))
+        with tqdm(desc=f"Downloading", total=total_size, unit="B", unit_scale=True, unit_divisor=1024) as t:
+            for chunk in response.iter_content(CHUNK_SIZE):
+                if chunk:
+                    data.extend(chunk)
+                    t.update(len(chunk))
+        response.raise_for_status()
+        return json.loads(data)
 
     def put_redirect_tables(self, table: List[Route]) -> Tuple[int, str]:
         """Put redirect table to server.
@@ -65,7 +86,7 @@ class ServeyRedirectSdk:
         headers = {"Content-type": "application/json", "Authorization": self.admin_token}
         data = json.dumps([asdict(dat) for dat in table]).encode("utf-8")
         with tqdm(desc=f"Uploading", total=len(data), unit="B", unit_scale=True, unit_divisor=1024) as t:
-            reader_wrapper = CallbackIOWrapper(t.update, BytesIO(data), "read")
+            reader_wrapper = ReaderWrapper(t.update, BytesIO(data), len(data))
             response = requests.put(url, headers=headers, data=reader_wrapper)
             response.raise_for_status()
             return (response.status_code, response.text)
