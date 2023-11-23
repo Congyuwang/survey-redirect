@@ -44,6 +44,9 @@ class ServeyRedirectSdk:
     def put_redirect_tables(self, table: List[Route]) -> Tuple[int, str]:
         """Put redirect table to server.
 
+        Replaces the existing redirect table with the given one
+        (i.e., delete the old table, and put the new table).
+
         Args:
             table (List[Route]): The redirect table to be put.
 
@@ -52,13 +55,7 @@ class ServeyRedirectSdk:
             (200, "success") if success. Raise exception otherwise.
         """
         # Check input
-        if not isinstance(table, list):
-            raise Exception("Not a list")
-        if len(table) == 0:
-            raise Exception("Empty table")
-        for route in table:
-            if not isinstance(route, Route):
-                raise Exception("Not a Route object")
+        self.__check_table(table)
 
         # Send request
         url = self.server_url + "/admin/routing_table"
@@ -68,3 +65,36 @@ class ServeyRedirectSdk:
             return (response.status_code, response.text)
         else:
             raise Exception(response.status_code, response.text)
+
+    def patch_redirect_tables(self, table: List[Route]) -> Tuple[int, str]:
+        """Patch redirect table to server.
+
+        Overwrite existing data, and insert new route if id not exist.
+
+        Args:
+            table (List[Route]): The redirect table to be put.
+
+        Returns:
+            Tuple[int, str]: The status code and response text.
+            (200, "success") if success. Raise exception otherwise.
+        """
+        # Check input
+        self.__check_table(table)
+
+        # Send request
+        url = self.server_url + "/admin/routing_table"
+        headers = {"Authorization": self.admin_token}
+        response = requests.patch(url, headers=headers, json=[asdict(dat) for dat in table])
+        if response.status_code == 200:
+            return (response.status_code, response.text)
+        else:
+            raise Exception(response.status_code, response.text)
+
+    def __check_table(self, table: List[Route]):
+        if not isinstance(table, list):
+            raise Exception("Not a list")
+        if len(table) == 0:
+            raise Exception("Empty table")
+        for route in table:
+            if not isinstance(route, Route):
+                raise Exception("Not a Route object")

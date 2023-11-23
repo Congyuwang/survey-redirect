@@ -57,7 +57,10 @@ async fn main() {
     let api = Router::new().route("/", get(handler::redirect));
     let admin = Router::new()
         .route("/get_links", get(handler::get_links))
-        .route("/routing_table", put(handler::put_routing_table))
+        .route(
+            "/routing_table",
+            put(handler::put_routing_table).patch(handler::patch_routing_table),
+        )
         .layer(axum::middleware::from_fn(utility::auth));
     let app = Router::new()
         .nest("/api", api)

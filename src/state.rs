@@ -132,6 +132,40 @@ impl RouterState {
         Ok(())
     }
 
+    /// inserting routing table
+    pub async fn patch_routing_table(&self, data: Vec<Route>) -> Result<(), StateError> {
+        // use the sync table to reduce impect on redirect service
+        let admin_table = self.router_table_admin.clone();
+        let code_table_lk = self.code_table.clone();
+        // create new router table
+        let new_router_table = tokio::task::spawn_blocking(move || {
+            let mut router_table_tmp = admin_table.lock().unwrap().clone();
+            let mut code_table = code_table_lk.lock().unwrap();
+            for route in data {
+                let code = Self::get_code(&mut code_table, &route.id).to_string();
+                router_table_tmp.insert(code, route);
+            }
+            router_table_tmp
+        })
+        .await
+        .map_err(|e| {
+            StateError::StoreError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("background task error {e}"),
+            ))
+        })?;
+
+        write_router_table(&new_router_table, &self.router_table_store)
+            .await
+            .map_err(|e| StateError::StoreError(e))?;
+
+        // update router tables
+        *self.router_table_admin.lock().unwrap() = new_router_table.clone();
+        *self.router_table.lock().unwrap() = new_router_table;
+
+        Ok(())
+    }
+
     /// get all links
     pub fn get_links(&self) -> Result<HashMap<String, Url>, StateError> {
         Ok(self

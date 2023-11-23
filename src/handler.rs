@@ -38,7 +38,7 @@ pub async fn put_routing_table(
 ) -> Response {
     match state.put_routing_table(data).await {
         Ok(_) => {
-            info!("routing table update success");
+            info!("put table success");
             (StatusCode::OK, "success").into_response()
         }
         Err(StateError::StoreError(e)) => {
@@ -54,6 +54,34 @@ pub async fn put_routing_table(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("fatal, unknown error in put_routing_table: {:?}", e),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn patch_routing_table(
+    State(state): State<RouterState>,
+    Json(data): Json<Vec<Route>>,
+) -> Response {
+    match state.patch_routing_table(data).await {
+        Ok(_) => {
+            info!("patch table success");
+            (StatusCode::OK, "success").into_response()
+        }
+        Err(StateError::StoreError(e)) => {
+            error!("storage error: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("storage error: {e}"),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!("fatal, unknown error in patch_routing_table: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("fatal, unknown error in patch_routing_table: {:?}", e),
             )
                 .into_response()
         }
