@@ -24,13 +24,6 @@ pub struct RedirectParams {
     pub code: String,
 }
 
-#[derive(Serialize)]
-pub struct Link {
-    id: String,
-    code: String,
-    url: Url,
-}
-
 #[derive(Clone)]
 pub struct RouterState {
     router_url: Url,
@@ -140,23 +133,21 @@ impl RouterState {
     }
 
     /// get all links
-    pub fn get_links(&self) -> Result<Vec<Link>, StateError> {
+    pub fn get_links(&self) -> Result<HashMap<String, Url>, StateError> {
         Ok(self
             .router_table_admin
             .lock()
             .unwrap()
             .iter()
-            .map(|(code, route)| Link {
-                id: route.id.clone(),
-                code: code.clone(),
-                url: {
+            .map(|(code, route)| {
+                (route.id.clone(), {
                     let mut url = self.router_url.clone();
                     url.set_path(API);
                     url.query_pairs_mut().append_pair(CODE, code).finish();
                     url
-                },
+                })
             })
-            .collect::<Vec<_>>())
+            .collect::<HashMap<_, _>>())
     }
 
     /// set params for redirected url.
