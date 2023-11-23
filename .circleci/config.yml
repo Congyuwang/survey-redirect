@@ -13,15 +13,15 @@ jobs:
           name: "Build"
           command: |
             cargo build --release
-            mv ./build/survey_redirect ./build/survey_redirect-x86_64-<< parameters.os >>
+            mv ./build/survey-redirect ./build/survey-redirect-x86_64-<< parameters.os >>
       - store_artifacts:
           name: "Save Binary"
-          path: ./build/survey_redirect-x86_64-<< parameters.os >>
-          destination: survey_redirect-x86_64-<< parameters.os >>
+          path: ./build/survey-redirect-x86_64-<< parameters.os >>
+          destination: survey-redirect-x86_64-<< parameters.os >>
       - persist_to_workspace:
           root: ./build
           paths:
-            - survey_redirect-x86_64-<< parameters.os >>
+            - survey-redirect-x86_64-<< parameters.os >>
 
 workflows:
   build-binary:
