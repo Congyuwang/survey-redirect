@@ -60,8 +60,8 @@ pub async fn load_latest_router_table<P: AsRef<Path>>(
         }
 
         // extract time from time.json
-        let path = entry.path();
         let this_time = {
+            let path = entry.path();
             if Some(JSON_EXT) == path.extension().map(|ext| ext.to_str()).flatten() {
                 if let Some(Ok(this_time)) = path
                     .file_stem()
