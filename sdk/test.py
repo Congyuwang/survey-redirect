@@ -7,7 +7,7 @@ params = {str(i): str(i) for i in range(100)}
 
 # upload redirect routing table
 sdk.put_redirect_tables([
-    sr.Route(str(i), "https://www.google.com.hk/search", params)
+    sr.Route(str(i), "https://www.google.com.hk/search?q=Gaza", params)
     for i in range(10000)
 ])
 

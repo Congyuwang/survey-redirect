@@ -1,42 +1,45 @@
-from typing import Dict, List, Tuple, Callable
-import requests
-import json
-from urllib import parse
-from dataclasses import dataclass, asdict
-from io import BytesIO
-from tqdm import tqdm
+from typing import Dict as _Dict, List as _List, Tuple as _Tuple, Callable as _Callable
+import requests as _requests
+import json as _json
+from urllib import parse as _parse
+from dataclasses import dataclass as _dataclass, asdict as _asdict
+from io import BytesIO as _BytesIO
+from tqdm import tqdm as _tqdm
 
 
-CHUNK_SIZE = 32 * 1024
+__all__ = ["Route", "ServeyRedirectSdk"]
 
 
-@dataclass
+_CHUNK_SIZE = 32 * 1024
+
+
+@_dataclass
 class Route:
     id: str
     url: str
 
-    def __init__(self, id: str, url: str, params: Dict[str, str]):
+    def __init__(self, id: str, url: str, params: _Dict[str, str]):
         self.id = id
         # parse url
-        url_parts = parse.urlparse(url)
+        url_parts = _parse.urlparse(url)
+        # parse params
+        this_params = _parse.parse_qsl(url_parts.query)
         # add params
-        this_params = parse.parse_qs(url_parts.query)
-        for key, value in this_params.items():
-            if key not in params and len(value) > 0:
-                params[key] = value[0]
+        for key, value in params.items():
+            this_params.append((key, value))
         # rebuild url
-        self.url = parse.urlunparse((
+        self.url = _parse.urlunparse((
             url_parts.scheme,
             url_parts.netloc,
             url_parts.path,
             url_parts.params,
-            parse.urlencode(params),
+            _parse.urlencode(this_params),
             url_parts.fragment
         ))
 
 
-class ReaderWrapper(object):
-    def __init__(self, callback: Callable[[int], object], stream, length):
+class _ReaderWrapper(object):
+    def __init__(self, callback: _Callable[[int], object], stream, length):
         self.callback = callback
         self.stream = stream
         self.length = length
@@ -60,7 +63,7 @@ class ServeyRedirectSdk:
         self.server_url = server_url
         self.admin_token = admin_token
 
-    def get_links(self) -> Dict[str, str]:
+    def get_links(self) -> _Dict[str, str]:
         """Get links from server.
 
         Returns:
@@ -68,18 +71,18 @@ class ServeyRedirectSdk:
         """
         url = self.server_url + "/admin/get_links"
         headers = {"Authorization": self.admin_token}
-        response = requests.get(url, stream=True, headers=headers)
+        response = _requests.get(url, stream=True, headers=headers)
         data = bytearray()
         total_size = int(response.headers.get('content-length', 0))
-        with tqdm(desc=f"Downloading", total=total_size, unit="B", unit_scale=True, unit_divisor=1024) as t:
-            for chunk in response.iter_content(CHUNK_SIZE):
+        with self.__progress_bar(desc="Downloading", total=total_size) as t:
+            for chunk in response.iter_content(_CHUNK_SIZE):
                 if chunk:
                     data.extend(chunk)
                     t.update(len(chunk))
         response.raise_for_status()
-        return json.loads(data)
+        return _json.loads(data)
 
-    def put_redirect_tables(self, table: List[Route]) -> Tuple[int, str]:
+    def put_redirect_tables(self, table: _List[Route]) -> _Tuple[int, str]:
         """Put redirect table to server.
 
         Replaces the existing redirect table with the given one
@@ -98,14 +101,14 @@ class ServeyRedirectSdk:
         # Send request
         url = self.server_url + "/admin/routing_table"
         headers = {"Content-type": "application/json", "Authorization": self.admin_token}
-        data = json.dumps([asdict(dat) for dat in table]).encode("utf-8")
-        with tqdm(desc=f"Uploading", total=len(data), unit="B", unit_scale=True, unit_divisor=1024) as t:
-            reader_wrapper = ReaderWrapper(t.update, BytesIO(data), len(data))
-            response = requests.put(url, headers=headers, data=reader_wrapper)
+        data = _json.dumps([_asdict(dat) for dat in table]).encode("utf-8")
+        with self.__progress_bar(desc="Uploading", total=len(data)) as t:
+            reader_wrapper = _ReaderWrapper(t.update, _BytesIO(data), len(data))
+            response = _requests.put(url, headers=headers, data=reader_wrapper)
             response.raise_for_status()
             return (response.status_code, response.text)
 
-    def __check_table(self, table: List[Route]):
+    def __check_table(self, table: _List[Route]):
         if not isinstance(table, list):
             raise Exception("Not a list")
         if len(table) == 0:
@@ -113,3 +116,6 @@ class ServeyRedirectSdk:
         for route in table:
             if not isinstance(route, Route):
                 raise Exception("Not a Route object")
+
+    def __progress_bar(self, desc: str, total: int):
+        return _tqdm(desc=desc, total=total, unit="B", unit_scale=True, unit_divisor=1024)
