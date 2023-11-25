@@ -6,7 +6,7 @@ use parking_lot::{Mutex, MutexGuard};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -18,7 +18,7 @@ use url::Url;
 pub struct Route {
     pub id: String,
     pub url: Url,
-    pub params: HashMap<String, String>,
+    pub params: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
