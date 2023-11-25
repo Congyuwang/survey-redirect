@@ -6,7 +6,7 @@ use parking_lot::{Mutex, MutexGuard};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -30,8 +30,8 @@ pub struct RedirectParams {
 pub struct RouterState {
     router_url: Url,
     router_table_store: PathBuf,
-    router_table: Arc<RwLock<HashMap<String, Route>>>,
-    code_table: Arc<Mutex<HashMap<String, String>>>,
+    router_table: Arc<RwLock<BTreeMap<String, Route>>>,
+    code_table: Arc<Mutex<BTreeMap<String, String>>>,
 }
 
 #[derive(Debug)]
@@ -63,7 +63,7 @@ impl RouterState {
             }
             None => {
                 info!("new router table created");
-                Arc::new(RwLock::new(HashMap::new()))
+                Arc::new(RwLock::new(BTreeMap::new()))
             }
         };
         // clone to router table sync
@@ -73,7 +73,7 @@ impl RouterState {
                 .await
                 .iter()
                 .map(|(code, route)| (route.id.to_string(), code.to_string()))
-                .collect::<HashMap<_, _>>(),
+                .collect::<BTreeMap<_, _>>(),
         ));
         Ok(Self {
             router_url: router_url.clone(),
@@ -102,7 +102,7 @@ impl RouterState {
         let code_table_lk = self.code_table.clone();
         // create new router table
         let new_router_table = tokio::task::spawn_blocking(move || {
-            let mut router_table_tmp = HashMap::new();
+            let mut router_table_tmp = BTreeMap::new();
             let mut code_table = code_table_lk.lock();
             for route in data {
                 let code = Self::get_code(&mut code_table, &route.id).to_string();
@@ -129,7 +129,7 @@ impl RouterState {
     }
 
     /// get all links
-    pub async fn get_links(&self) -> Result<HashMap<String, Url>, StateError> {
+    pub async fn get_links(&self) -> Result<BTreeMap<String, Url>, StateError> {
         Ok(self
             .router_table
             .read()
@@ -143,7 +143,7 @@ impl RouterState {
                     url
                 })
             })
-            .collect::<HashMap<_, _>>())
+            .collect::<BTreeMap<_, _>>())
     }
 
     /// set params for redirected url.
@@ -163,7 +163,7 @@ impl RouterState {
 
     /// lookup or gen code.
     #[inline]
-    fn get_code<'a>(code_table: &'a mut MutexGuard<HashMap<String, String>>, id: &str) -> &'a str {
+    fn get_code<'a>(code_table: &'a mut MutexGuard<BTreeMap<String, String>>, id: &str) -> &'a str {
         code_table.entry(id.to_string()).or_insert(
             rand::thread_rng()
                 .sample_iter(Alphanumeric)
