@@ -14,24 +14,50 @@ use tokio::sync::RwLock;
 use tracing::info;
 use url::Url;
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Hash, PartialEq, Eq)]
+pub struct Id(String);
+
+#[derive(Deserialize, Serialize, Clone, Hash, PartialEq, Eq)]
+pub struct Code(String);
+
+#[derive(Deserialize)]
 pub struct Route {
-    pub id: String,
+    pub id: Id,
     pub url: Url,
     pub params: HashMap<String, String>,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct RouteFinal {
+    pub id: Id,
+    pub url: Url,
+}
+
+impl From<Route> for RouteFinal {
+    fn from(route: Route) -> Self {
+        let mut url = route.url;
+        {
+            let mut query = url.query_pairs_mut();
+            route.params.iter().for_each(|(k, v)| {
+                query.append_pair(k, v);
+            });
+            query.finish();
+        }
+        Self { id: route.id, url }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct RedirectParams {
-    pub code: String,
+    pub code: Code,
 }
 
 #[derive(Clone)]
 pub struct RouterState {
     router_url: Url,
     router_table_store: PathBuf,
-    router_table: Arc<RwLock<HashMap<String, Route>>>,
-    code_table: Arc<Mutex<HashMap<String, String>>>,
+    router_table: Arc<RwLock<HashMap<Code, RouteFinal>>>,
+    code_table: Arc<Mutex<HashMap<Id, Code>>>,
 }
 
 #[derive(Debug)]
@@ -71,7 +97,7 @@ impl RouterState {
                 .read()
                 .await
                 .iter()
-                .map(|(code, route)| (route.id.to_string(), code.to_string()))
+                .map(|(code, route)| (route.id.clone(), code.clone()))
                 .collect::<HashMap<_, _>>(),
         ));
         Ok(Self {
@@ -90,7 +116,13 @@ impl RouterState {
         let route = lk
             .get(&redirect_params.code)
             .ok_or(StateError::InvalidCode)?;
-        Ok(self.set_params(route, &redirect_params.code))
+        let mut url = route.url.clone();
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair(EXTERNEL_ID, &redirect_params.code.0);
+            query.finish();
+        }
+        Ok(url)
     }
 
     // admin APIs
@@ -104,8 +136,8 @@ impl RouterState {
             let mut router_table_tmp = HashMap::new();
             let mut code_table = code_table_lk.lock();
             for route in data {
-                let code = Self::get_code(&mut code_table, &route.id).to_string();
-                router_table_tmp.insert(code, route);
+                let code = Self::get_code(&mut code_table, &route.id).clone();
+                router_table_tmp.insert(code, route.into());
             }
             router_table_tmp
         })
@@ -128,7 +160,7 @@ impl RouterState {
     }
 
     /// get all links
-    pub async fn get_links(&self) -> Result<HashMap<String, Url>, StateError> {
+    pub async fn get_links(&self) -> Result<HashMap<Id, Url>, StateError> {
         Ok(self
             .router_table
             .read()
@@ -138,37 +170,22 @@ impl RouterState {
                 (route.id.clone(), {
                     let mut url = self.router_url.clone();
                     url.set_path(API);
-                    url.query_pairs_mut().append_pair(CODE, code).finish();
+                    url.query_pairs_mut().append_pair(CODE, &code.0).finish();
                     url
                 })
             })
             .collect::<HashMap<_, _>>())
     }
 
-    /// set params for redirected url.
-    #[inline]
-    fn set_params(&self, route: &Route, code: &str) -> Url {
-        let mut url = route.url.clone();
-        {
-            let mut query = url.query_pairs_mut();
-            route.params.iter().for_each(|(k, v)| {
-                query.append_pair(k, v);
-            });
-            query.append_pair(EXTERNEL_ID, code);
-            query.finish();
-        }
-        url
-    }
-
     /// lookup or gen code.
     #[inline]
-    fn get_code<'a>(code_table: &'a mut MutexGuard<HashMap<String, String>>, id: &str) -> &'a str {
-        code_table.entry(id.to_string()).or_insert(
+    fn get_code<'a>(code_table: &'a mut MutexGuard<HashMap<Id, Code>>, id: &Id) -> &'a Code {
+        code_table.entry(id.clone()).or_insert(Code(
             rand::thread_rng()
                 .sample_iter(Alphanumeric)
                 .take(CODE_LENGTH)
                 .map(char::from)
                 .collect::<String>(),
-        )
+        ))
     }
 }
