@@ -112,7 +112,7 @@ impl RouterState {
         let code_table_lk = self.code_table.clone();
         // create new router table
         let new_router_table = tokio::task::spawn_blocking(move || {
-            let mut router_table_tmp = HashMap::new();
+            let mut router_table_tmp = HashMap::with_capacity(data.len());
             let mut code_table = code_table_lk.lock();
             for route in data {
                 let code = Self::get_code(&mut code_table, &route.id).clone();
