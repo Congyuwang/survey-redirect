@@ -5,14 +5,13 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     Json,
 };
-
 use tracing::{error, info, warn};
 
 pub async fn redirect(
     State(state): State<RouterState>,
     Query(redirect_params): Query<RedirectParams>,
 ) -> Response {
-    match state.redirect(redirect_params) {
+    match state.redirect(redirect_params).await {
         Ok(url) => {
             info!("redirect request to {url}");
             Redirect::to(url.as_str()).into_response()
@@ -61,7 +60,7 @@ pub async fn put_routing_table(
 }
 
 pub async fn get_links(State(state): State<RouterState>) -> Response {
-    match state.get_links() {
+    match state.get_links().await {
         Ok(links) => {
             info!("got link request");
             Json(links).into_response()

@@ -2,7 +2,7 @@ use crate::{
     utility::{load_latest_router_table, write_router_table},
     API, CODE, CODE_LENGTH, EXTERNEL_ID,
 };
-use parking_lot::{Mutex, MutexGuard, RwLock};
+use parking_lot::{Mutex, MutexGuard};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use tokio::sync::RwLock;
 use tracing::info;
 use url::Url;
 
@@ -69,6 +70,7 @@ impl RouterState {
         let code_table = Arc::new(Mutex::new(
             router_table
                 .read()
+                .await
                 .iter()
                 .map(|(code, route)| (route.id.to_string(), code.to_string()))
                 .collect::<HashMap<_, _>>(),
@@ -84,9 +86,8 @@ impl RouterState {
     // public API
 
     /// get the redirect url
-    #[inline]
-    pub fn redirect(&self, redirect_params: RedirectParams) -> Result<Url, StateError> {
-        let lk = self.router_table.read();
+    pub async fn redirect(&self, redirect_params: RedirectParams) -> Result<Url, StateError> {
+        let lk = self.router_table.read().await;
         let route = lk
             .get(&redirect_params.code)
             .ok_or(StateError::IdNotFound)?;
@@ -122,16 +123,17 @@ impl RouterState {
             .map_err(|e| StateError::StoreError(e))?;
 
         // update router tables
-        *self.router_table.write() = new_router_table;
+        *self.router_table.write().await = new_router_table;
 
         Ok(())
     }
 
     /// get all links
-    pub fn get_links(&self) -> Result<HashMap<String, Url>, StateError> {
+    pub async fn get_links(&self) -> Result<HashMap<String, Url>, StateError> {
         Ok(self
             .router_table
             .read()
+            .await
             .iter()
             .map(|(code, route)| {
                 (route.id.clone(), {
