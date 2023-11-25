@@ -1,9 +1,8 @@
+use crate::CONFIG_FILE_NAME;
 use config::{Config as Conf, ConfigError};
 use serde::Deserialize;
 use std::{net::SocketAddr, path::PathBuf};
 use url::Url;
-
-use crate::CONFIG_FILE_NAME;
 
 #[derive(Deserialize)]
 pub struct Config {
