@@ -20,31 +20,10 @@ pub struct Id(String);
 #[derive(Deserialize, Serialize, Clone, Hash, PartialEq, Eq)]
 pub struct Code(String);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Route {
     pub id: Id,
     pub url: Url,
-    pub params: HashMap<String, String>,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct RouteFinal {
-    pub id: Id,
-    pub url: Url,
-}
-
-impl From<Route> for RouteFinal {
-    fn from(route: Route) -> Self {
-        let mut url = route.url;
-        {
-            let mut query = url.query_pairs_mut();
-            route.params.iter().for_each(|(k, v)| {
-                query.append_pair(k, v);
-            });
-            query.finish();
-        }
-        Self { id: route.id, url }
-    }
 }
 
 #[derive(Deserialize)]
@@ -56,7 +35,7 @@ pub struct RedirectParams {
 pub struct RouterState {
     router_url: Url,
     router_table_store: PathBuf,
-    router_table: Arc<RwLock<HashMap<Code, RouteFinal>>>,
+    router_table: Arc<RwLock<HashMap<Code, Route>>>,
     code_table: Arc<Mutex<HashMap<Id, Code>>>,
 }
 
@@ -137,7 +116,7 @@ impl RouterState {
             let mut code_table = code_table_lk.lock();
             for route in data {
                 let code = Self::get_code(&mut code_table, &route.id).clone();
-                router_table_tmp.insert(code, route.into());
+                router_table_tmp.insert(code, route);
             }
             router_table_tmp
         })

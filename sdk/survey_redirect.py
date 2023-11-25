@@ -1,6 +1,7 @@
 from typing import Dict, List, Tuple, Callable
 import requests
 import json
+from urllib import parse
 from dataclasses import dataclass, asdict
 from io import BytesIO
 from tqdm import tqdm
@@ -13,12 +14,25 @@ CHUNK_SIZE = 32 * 1024
 class Route:
     id: str
     url: str
-    params: Dict[str, str]
 
     def __init__(self, id: str, url: str, params: Dict[str, str]):
         self.id = id
-        self.url = url
-        self.params = params
+        # parse url
+        url_parts = parse.urlparse(url)
+        # add params
+        this_params = parse.parse_qs(url_parts.query)
+        for key, value in this_params.items():
+            if key not in params and len(value) > 0:
+                params[key] = value[0]
+        # rebuild url
+        self.url = parse.urlunparse((
+            url_parts.scheme,
+            url_parts.netloc,
+            url_parts.path,
+            url_parts.params,
+            parse.urlencode(params),
+            url_parts.fragment
+        ))
 
 
 class ReaderWrapper(object):
