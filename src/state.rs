@@ -37,7 +37,6 @@ pub struct RouterState {
 #[derive(Debug)]
 pub enum StateError {
     Unauthorized,
-    IdNotFound,
     InvalidCode,
     StoreError(std::io::Error),
 }
@@ -90,7 +89,7 @@ impl RouterState {
         let lk = self.router_table.read().await;
         let route = lk
             .get(&redirect_params.code)
-            .ok_or(StateError::IdNotFound)?;
+            .ok_or(StateError::InvalidCode)?;
         Ok(self.set_params(route, &redirect_params.code))
     }
 

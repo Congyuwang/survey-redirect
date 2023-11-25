@@ -16,13 +16,9 @@ pub async fn redirect(
             info!("redirect request to {url}");
             Redirect::to(url.as_str()).into_response()
         }
-        Err(StateError::IdNotFound) => {
-            warn!("request with invalid id");
-            (StatusCode::NOT_FOUND, "invalid uri").into_response()
-        }
         Err(StateError::InvalidCode) => {
             warn!("request with invalid code");
-            (StatusCode::NOT_FOUND, "invalid uri").into_response()
+            (StatusCode::NOT_FOUND, "invalid code").into_response()
         }
         Err(e) => {
             error!("fatal, unknown error when redirecting: {:?}", e);
