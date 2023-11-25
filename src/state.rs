@@ -2,12 +2,13 @@ use crate::{
     utility::{load_latest_router_table, write_router_table},
     API, CODE, CODE_LENGTH, EXTERNEL_ID,
 };
+use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::Arc,
 };
 use tracing::info;
 use url::Url;
@@ -28,10 +29,8 @@ pub struct RedirectParams {
 pub struct RouterState {
     router_url: Url,
     router_table_store: PathBuf,
-    router_table: Arc<Mutex<HashMap<String, Route>>>,
-    /// these are used for updating table to reduce impact on redirect service
+    router_table: Arc<RwLock<HashMap<String, Route>>>,
     code_table: Arc<Mutex<HashMap<String, String>>>,
-    router_table_admin: Arc<Mutex<HashMap<String, Route>>>,
 }
 
 #[derive(Debug)]
@@ -59,19 +58,17 @@ impl RouterState {
         {
             Some((time, table)) => {
                 info!("router table loaded (time={time})");
-                Arc::new(Mutex::new(table))
+                Arc::new(RwLock::new(table))
             }
             None => {
                 info!("new router table created");
-                Arc::new(Mutex::new(HashMap::new()))
+                Arc::new(RwLock::new(HashMap::new()))
             }
         };
         // clone to router table sync
-        let router_table_admin = Arc::new(Mutex::new(router_table.lock().unwrap().clone()));
         let code_table = Arc::new(Mutex::new(
             router_table
-                .lock()
-                .unwrap()
+                .read()
                 .iter()
                 .map(|(code, route)| (route.id.to_string(), code.to_string()))
                 .collect::<HashMap<_, _>>(),
@@ -81,7 +78,6 @@ impl RouterState {
             router_table_store: router_table_store.as_ref().to_owned(),
             router_table,
             code_table,
-            router_table_admin,
         })
     }
 
@@ -90,7 +86,7 @@ impl RouterState {
     /// get the redirect url
     #[inline]
     pub fn redirect(&self, redirect_params: RedirectParams) -> Result<Url, StateError> {
-        let lk = self.router_table.lock().unwrap();
+        let lk = self.router_table.read();
         let route = lk
             .get(&redirect_params.code)
             .ok_or(StateError::IdNotFound)?;
@@ -106,7 +102,7 @@ impl RouterState {
         // create new router table
         let new_router_table = tokio::task::spawn_blocking(move || {
             let mut router_table_tmp = HashMap::new();
-            let mut code_table = code_table_lk.lock().unwrap();
+            let mut code_table = code_table_lk.lock();
             for route in data {
                 let code = Self::get_code(&mut code_table, &route.id).to_string();
                 router_table_tmp.insert(code, route);
@@ -126,8 +122,7 @@ impl RouterState {
             .map_err(|e| StateError::StoreError(e))?;
 
         // update router tables
-        *self.router_table_admin.lock().unwrap() = new_router_table.clone();
-        *self.router_table.lock().unwrap() = new_router_table;
+        *self.router_table.write() = new_router_table;
 
         Ok(())
     }
@@ -135,9 +130,8 @@ impl RouterState {
     /// get all links
     pub fn get_links(&self) -> Result<HashMap<String, Url>, StateError> {
         Ok(self
-            .router_table_admin
-            .lock()
-            .unwrap()
+            .router_table
+            .read()
             .iter()
             .map(|(code, route)| {
                 (route.id.clone(), {
