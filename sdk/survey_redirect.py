@@ -70,7 +70,7 @@ class ServeyRedirectSdk:
             Dict[str, str]: A mapping from user ID to their survey links.
         """
         url = self.server_url + "/admin/get_links"
-        headers = {"Authorization": self.admin_token}
+        headers = {"Authorization": "Bearer " + self.admin_token}
         response = _requests.get(url, stream=True, headers=headers)
         data = bytearray()
         total_size = int(response.headers.get('content-length', 0))
@@ -100,7 +100,7 @@ class ServeyRedirectSdk:
 
         # Send request
         url = self.server_url + "/admin/routing_table"
-        headers = {"Content-type": "application/json", "Authorization": self.admin_token}
+        headers = {"Content-type": "application/json", "Authorization": "Bearer " + self.admin_token}
         data = _json.dumps([_asdict(dat) for dat in table]).encode("utf-8")
         with self.__progress_bar(desc="Uploading", total=len(data)) as t:
             reader_wrapper = _ReaderWrapper(t.update, _BytesIO(data), len(data))

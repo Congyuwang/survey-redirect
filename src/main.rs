@@ -5,7 +5,8 @@ use axum::{
     Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
-use std::{fs::OpenOptions, sync::Arc};
+use std::fs::OpenOptions;
+use tower_http::validate_request::ValidateRequestHeaderLayer;
 use tracing_subscriber::prelude::*;
 
 pub mod config;
@@ -27,7 +28,6 @@ pub const BODY_LIMIT: usize = 512 * 1024 * 1024;
 async fn main() {
     // read configuration
     let server_config = Config::load().expect("failed to load config");
-    let admin_token = Arc::new(server_config.admin_token.clone());
 
     // configure log
     let timer = tracing_subscriber::fmt::time::ChronoLocal::rfc_3339();
@@ -52,7 +52,7 @@ async fn main() {
         .init();
 
     // load state from disk
-    let state = RouterState::init(&server_config.base_url, &server_config.storage_root)
+    let state = RouterState::init(&server_config)
         .await
         .expect("error initing router table");
 
@@ -62,10 +62,9 @@ async fn main() {
         .route("/get_links", get(handler::get_links))
         .route("/routing_table", put(handler::put_routing_table))
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
-        .layer(axum::middleware::from_fn(move |req, next| {
-            let admin_token = admin_token.clone();
-            async move { utility::auth(req, next, &admin_token).await }
-        }));
+        .layer(ValidateRequestHeaderLayer::bearer(
+            &server_config.admin_token,
+        ));
     let app = Router::new()
         .nest("/api", api)
         .nest("/admin", admin)

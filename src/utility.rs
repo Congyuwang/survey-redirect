@@ -1,30 +1,10 @@
 use crate::state::{Code, Route};
-use axum::{
-    http::{header::AUTHORIZATION, Request, StatusCode},
-    middleware::Next,
-    response::Response,
-};
 use chrono::{DateTime, FixedOffset};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::HashMap, path::Path};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const JSON_EXT: &str = "json";
-
-/// auth middleware
-pub async fn auth<B>(req: Request<B>, next: Next<B>, token: &str) -> Result<Response, StatusCode> {
-    let auth_header = req
-        .headers()
-        .get(AUTHORIZATION)
-        .and_then(|header| header.to_str().ok())
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    if auth_header == token {
-        Ok(next.run(req).await)
-    } else {
-        Err(StatusCode::UNAUTHORIZED)
-    }
-}
 
 /// write new code table & redirect table to a file path
 pub async fn write_router_table<P: AsRef<Path>>(
@@ -61,12 +41,11 @@ pub async fn load_latest_router_table<P: AsRef<Path>>(
         // extract time from time.json
         let this_time = {
             let path = entry.path();
-            if Some(JSON_EXT) == path.extension().map(|ext| ext.to_str()).flatten() {
+            if Some(JSON_EXT) == path.extension().and_then(|ext| ext.to_str()) {
                 if let Some(Ok(this_time)) = path
                     .file_stem()
-                    .map(|name| name.to_str())
-                    .flatten()
-                    .map(|name| chrono::DateTime::parse_from_rfc3339(name))
+                    .and_then(|name| name.to_str())
+                    .map(chrono::DateTime::parse_from_rfc3339)
                 {
                     this_time
                 } else {
@@ -127,7 +106,7 @@ async fn write_data<P: AsRef<Path> + Send + 'static, T: Serialize>(
     })?;
 
     // create a temp file
-    let temp = asyncify(|| tempfile::NamedTempFile::new()).await?;
+    let temp = asyncify(tempfile::NamedTempFile::new).await?;
 
     // write to temp file
     let (temp_file, temp_path) = temp.into_parts();

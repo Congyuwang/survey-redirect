@@ -1,15 +1,12 @@
 use crate::{
+    config::Config,
     utility::{load_latest_router_table, write_router_table},
     API, CODE, CODE_LENGTH, EXTERNEL_ID,
 };
 use parking_lot::{Mutex, MutexGuard};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::info;
 use url::Url;
@@ -33,10 +30,10 @@ pub struct RedirectParams {
 
 #[derive(Clone)]
 pub struct RouterState {
-    router_url: Url,
-    router_table_store: PathBuf,
-    router_table: Arc<RwLock<HashMap<Code, Route>>>,
-    code_table: Arc<Mutex<HashMap<Id, Code>>>,
+    pub router_url: Url,
+    pub router_table_store: PathBuf,
+    pub router_table: Arc<RwLock<HashMap<Code, Route>>>,
+    pub code_table: Arc<Mutex<HashMap<Id, Code>>>,
 }
 
 #[derive(Debug)]
@@ -48,18 +45,15 @@ pub enum StateError {
 
 impl RouterState {
     /// load latest router table from disk, if any
-    pub async fn init<P: AsRef<Path>>(
-        router_url: &Url,
-        router_table_store: P,
-    ) -> Result<Self, StateError> {
+    pub async fn init(config: &Config) -> Result<Self, StateError> {
         // create store if not exist
-        tokio::fs::create_dir_all(router_table_store.as_ref())
+        tokio::fs::create_dir_all(&config.storage_root)
             .await
-            .map_err(|e| StateError::StoreError(e))?;
+            .map_err(StateError::StoreError)?;
         // load router table
-        let router_table = match load_latest_router_table(router_table_store.as_ref())
+        let router_table = match load_latest_router_table(&config.storage_root)
             .await
-            .map_err(|e| StateError::StoreError(e))?
+            .map_err(StateError::StoreError)?
         {
             Some((time, table)) => {
                 info!("router table loaded (time={time})");
@@ -80,8 +74,8 @@ impl RouterState {
                 .collect::<HashMap<_, _>>(),
         ));
         Ok(Self {
-            router_url: router_url.clone(),
-            router_table_store: router_table_store.as_ref().to_owned(),
+            router_url: config.base_url.clone(),
+            router_table_store: config.storage_root.clone(),
             router_table,
             code_table,
         })
@@ -130,7 +124,7 @@ impl RouterState {
 
         write_router_table(&new_router_table, &self.router_table_store)
             .await
-            .map_err(|e| StateError::StoreError(e))?;
+            .map_err(StateError::StoreError)?;
 
         // update router tables
         *self.router_table.write().await = new_router_table;
