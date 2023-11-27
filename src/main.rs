@@ -1,15 +1,21 @@
 use crate::{config::Config, state::RouterState};
 use axum::{
+    error_handling::HandleErrorLayer,
     extract::DefaultBodyLimit,
+    http::StatusCode,
     routing::{get, put},
-    Router,
+    BoxError, Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
 use std::{fs::OpenOptions, time::Duration};
+use tower::ServiceBuilder;
 use tower_http::{
-    compression::CompressionLayer, decompression::DecompressionLayer, timeout::TimeoutLayer,
+    compression::CompressionLayer,
+    decompression::{DecompressionLayer, RequestDecompressionLayer},
+    timeout::TimeoutLayer,
     validate_request::ValidateRequestHeaderLayer,
 };
+use tracing::error;
 use tracing_subscriber::prelude::*;
 
 pub mod config;
@@ -22,7 +28,7 @@ pub const API: &str = "api";
 pub const CODE: &str = "code";
 pub const CODE_LENGTH: usize = 64;
 pub const CONFIG_FILE_NAME: &str = "config.yaml";
-pub const BODY_LIMIT: usize = 512 * 1024 * 1024;
+pub const BODY_LIMIT: usize = 128 * 1024 * 1024;
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 1. redirect service
@@ -65,6 +71,14 @@ async fn main() {
     let admin = Router::new()
         .route("/get_links", get(handler::get_links))
         .route("/routing_table", put(handler::put_routing_table))
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(|err: BoxError| async move {
+                    error!("error decompressing data {err}");
+                    (StatusCode::BAD_REQUEST, "corrupt data")
+                }))
+                .layer(RequestDecompressionLayer::new().gzip(true)),
+        )
         .layer(CompressionLayer::new().gzip(true))
         .layer(DecompressionLayer::new().gzip(true))
         .layer(ValidateRequestHeaderLayer::bearer(

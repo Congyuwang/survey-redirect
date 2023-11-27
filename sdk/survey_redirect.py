@@ -5,7 +5,7 @@ from urllib import parse as _parse
 from dataclasses import dataclass as _dataclass, asdict as _asdict
 from io import BytesIO as _BytesIO
 from tqdm import tqdm as _tqdm
-import zlib as _zlib
+import gzip as _gzip
 
 
 __all__ = ["Route", "ServeyRedirectSdk"]
@@ -73,7 +73,8 @@ class ServeyRedirectSdk:
         """
         url = self.server_url + "/admin/get_links"
         headers = {
-            "Authorization": "Bearer " + self.admin_token
+            "Authorization": "Bearer " + self.admin_token,
+            "Accept-Encoding": "gzip",
         }
         response = _requests.get(url, stream=True, headers=headers, timeout=TIMEOUT)
         data = bytearray()
@@ -109,7 +110,7 @@ class ServeyRedirectSdk:
             "Content-Encoding": "gzip",
             "Authorization": "Bearer " + self.admin_token
         }
-        data = _zlib.compress(_json.dumps([_asdict(dat) for dat in table]).encode("utf-8"))
+        data = _gzip.compress(_json.dumps([_asdict(dat) for dat in table]).encode("utf-8"))
         with self.__progress_bar(desc="Uploading", total=len(data)) as t:
             reader_wrapper = _ReaderWrapper(t.update, _BytesIO(data), len(data))
             response = _requests.put(url, headers=headers, data=reader_wrapper, timeout=TIMEOUT)

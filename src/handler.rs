@@ -1,10 +1,12 @@
 use crate::state::{RedirectParams, Route, RouterState, StateError};
 use axum::{
+    body::{Body, HttpBody},
     extract::{Query, State},
-    http::StatusCode,
+    http::{Request, StatusCode},
     response::{IntoResponse, Redirect, Response},
     Json,
 };
+use tower_http::decompression::DecompressionBody;
 use tracing::{error, info, warn};
 
 pub async fn redirect(
@@ -29,8 +31,12 @@ pub async fn redirect(
 
 pub async fn put_routing_table(
     State(state): State<RouterState>,
-    Json(data): Json<Vec<Route>>,
+    req: Request<DecompressionBody<Body>>,
 ) -> Response {
+    let data = match decode_request(req).await {
+        Ok(data) => data,
+        Err(rsp) => return rsp,
+    };
     match state.put_routing_table(data).await {
         Ok(_) => {
             info!("put table success");
@@ -68,6 +74,27 @@ pub async fn get_links(State(state): State<RouterState>) -> Response {
                 format!("fatal, unknown error in get_links: {:?}", e),
             )
                 .into_response()
+        }
+    }
+}
+
+/// Decompress and parse json data
+async fn decode_request(mut req: Request<DecompressionBody<Body>>) -> Result<Vec<Route>, Response> {
+    let mut data = Vec::new();
+    while let Some(chunk) = req.body_mut().data().await {
+        match chunk {
+            Ok(chunk) => data.extend_from_slice(&chunk[..]),
+            Err(e) => {
+                error!("error reading data: {e}");
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, "corrupt data").into_response());
+            }
+        }
+    }
+    match serde_json::from_slice::<Vec<Route>>(&data) {
+        Ok(data) => Ok(data),
+        Err(e) => {
+            error!("json decode error: {e}");
+            return Err((StatusCode::BAD_REQUEST, "corrupt data").into_response());
         }
     }
 }
