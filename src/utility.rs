@@ -1,7 +1,4 @@
-use crate::{
-    state::{Code, Route},
-    SERVER_CONFIG,
-};
+use crate::state::{Code, Route};
 use axum::{
     http::{header::AUTHORIZATION, Request, StatusCode},
     middleware::Next,
@@ -15,15 +12,14 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 const JSON_EXT: &str = "json";
 
 /// auth middleware
-pub async fn auth<B>(req: Request<B>, next: Next<B>) -> Result<Response, StatusCode> {
+pub async fn auth<B>(req: Request<B>, next: Next<B>, token: &str) -> Result<Response, StatusCode> {
     let auth_header = req
         .headers()
         .get(AUTHORIZATION)
-        .and_then(|header| header.to_str().ok());
+        .and_then(|header| header.to_str().ok())
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let auth_header = auth_header.ok_or(StatusCode::UNAUTHORIZED)?;
-
-    if auth_header == &SERVER_CONFIG.admin_token {
+    if auth_header == token {
         Ok(next.run(req).await)
     } else {
         Err(StatusCode::UNAUTHORIZED)

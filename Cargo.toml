@@ -14,7 +14,6 @@ axum = "0.6.20"
 axum-server = { version = "0.5.1", features = ["tls-rustls"] }
 chrono = "0.4.31"
 config = "0.13.4"
-lazy_static = "1.4.0"
 parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
 rand = "0.8.5"
 serde = "1.0.193"
