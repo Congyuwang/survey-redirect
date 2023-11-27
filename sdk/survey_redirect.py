@@ -11,6 +11,7 @@ __all__ = ["Route", "ServeyRedirectSdk"]
 
 
 _CHUNK_SIZE = 32 * 1024
+TIMEOUT = 30
 
 
 @_dataclass
@@ -71,7 +72,7 @@ class ServeyRedirectSdk:
         """
         url = self.server_url + "/admin/get_links"
         headers = {"Authorization": "Bearer " + self.admin_token}
-        response = _requests.get(url, stream=True, headers=headers)
+        response = _requests.get(url, stream=True, headers=headers, timeout=TIMEOUT)
         data = bytearray()
         total_size = int(response.headers.get('content-length', 0))
         with self.__progress_bar(desc="Downloading", total=total_size) as t:
@@ -104,7 +105,7 @@ class ServeyRedirectSdk:
         data = _json.dumps([_asdict(dat) for dat in table]).encode("utf-8")
         with self.__progress_bar(desc="Uploading", total=len(data)) as t:
             reader_wrapper = _ReaderWrapper(t.update, _BytesIO(data), len(data))
-            response = _requests.put(url, headers=headers, data=reader_wrapper)
+            response = _requests.put(url, headers=headers, data=reader_wrapper, timeout=TIMEOUT)
             response.raise_for_status()
             return (response.status_code, response.text)
 
