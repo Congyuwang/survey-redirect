@@ -5,6 +5,7 @@ from urllib import parse as _parse
 from dataclasses import dataclass as _dataclass, asdict as _asdict
 from io import BytesIO as _BytesIO
 from tqdm import tqdm as _tqdm
+import zlib as _zlib
 
 
 __all__ = ["Route", "ServeyRedirectSdk"]
@@ -71,7 +72,9 @@ class ServeyRedirectSdk:
             Dict[str, str]: A mapping from user ID to their survey links.
         """
         url = self.server_url + "/admin/get_links"
-        headers = {"Authorization": "Bearer " + self.admin_token}
+        headers = {
+            "Authorization": "Bearer " + self.admin_token
+        }
         response = _requests.get(url, stream=True, headers=headers, timeout=TIMEOUT)
         data = bytearray()
         total_size = int(response.headers.get('content-length', 0))
@@ -101,8 +104,12 @@ class ServeyRedirectSdk:
 
         # Send request
         url = self.server_url + "/admin/routing_table"
-        headers = {"Content-type": "application/json", "Authorization": "Bearer " + self.admin_token}
-        data = _json.dumps([_asdict(dat) for dat in table]).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Content-Encoding": "gzip",
+            "Authorization": "Bearer " + self.admin_token
+        }
+        data = _zlib.compress(_json.dumps([_asdict(dat) for dat in table]).encode("utf-8"))
         with self.__progress_bar(desc="Uploading", total=len(data)) as t:
             reader_wrapper = _ReaderWrapper(t.update, _BytesIO(data), len(data))
             response = _requests.put(url, headers=headers, data=reader_wrapper, timeout=TIMEOUT)

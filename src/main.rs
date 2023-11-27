@@ -6,7 +6,10 @@ use axum::{
 };
 use axum_server::tls_rustls::RustlsConfig;
 use std::{fs::OpenOptions, time::Duration};
-use tower_http::{timeout::TimeoutLayer, validate_request::ValidateRequestHeaderLayer};
+use tower_http::{
+    compression::CompressionLayer, decompression::DecompressionLayer, timeout::TimeoutLayer,
+    validate_request::ValidateRequestHeaderLayer,
+};
 use tracing_subscriber::prelude::*;
 
 pub mod config;
@@ -62,6 +65,8 @@ async fn main() {
     let admin = Router::new()
         .route("/get_links", get(handler::get_links))
         .route("/routing_table", put(handler::put_routing_table))
+        .layer(CompressionLayer::new().gzip(true))
+        .layer(DecompressionLayer::new().gzip(true))
         .layer(ValidateRequestHeaderLayer::bearer(
             &server_config.admin_token,
         ))
