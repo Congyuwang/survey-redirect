@@ -4,8 +4,6 @@ from random import randint
 # admin SDK
 sdk = sr.ServeyRedirectSdk("http://127.0.0.1:443", "00000000000000000000")
 
-params = {str(i): str(i) for i in range(100)}
-
 # upload redirect routing table
 sdk.put_redirect_tables([
     sr.Route(
