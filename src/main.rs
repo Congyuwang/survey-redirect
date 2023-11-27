@@ -5,8 +5,8 @@ use axum::{
     Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
-use std::fs::OpenOptions;
-use tower_http::validate_request::ValidateRequestHeaderLayer;
+use std::{fs::OpenOptions, time::Duration};
+use tower_http::{timeout::TimeoutLayer, validate_request::ValidateRequestHeaderLayer};
 use tracing_subscriber::prelude::*;
 
 pub mod config;
@@ -20,6 +20,7 @@ pub const CODE: &str = "code";
 pub const CODE_LENGTH: usize = 64;
 pub const CONFIG_FILE_NAME: &str = "config.yaml";
 pub const BODY_LIMIT: usize = 512 * 1024 * 1024;
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 1. redirect service
 /// 2. upload redirect table (id (str), url (str), params (dict))
@@ -61,13 +62,14 @@ async fn main() {
     let admin = Router::new()
         .route("/get_links", get(handler::get_links))
         .route("/routing_table", put(handler::put_routing_table))
-        .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(ValidateRequestHeaderLayer::bearer(
             &server_config.admin_token,
-        ));
+        ))
+        .layer(DefaultBodyLimit::max(BODY_LIMIT));
     let app = Router::new()
         .nest("/api", api)
         .nest("/admin", admin)
+        .layer(TimeoutLayer::new(DEFAULT_TIMEOUT))
         .with_state(state);
 
     // start service
