@@ -11,7 +11,7 @@ use std::{
 };
 
 const JSON_EXT: &str = "json";
-const CODE_EXT: &str = "code";
+const CODE_TABLE: &str = "code";
 
 type TimeStamp = DateTime<FixedOffset>;
 
@@ -26,7 +26,12 @@ pub fn write_code_table<P: AsRef<Path>>(
     code_table: &HashMap<Id, Code>,
     router_directory: P,
 ) -> std::io::Result<()> {
-    write_data_with_timestamp_ext(code_table, router_directory, CODE_EXT)
+    let file = {
+        let mut dst = router_directory.as_ref().to_owned();
+        dst.push(CODE_TABLE);
+        dst
+    };
+    write_data(file, code_table)
 }
 
 fn write_data_with_timestamp_ext<P: AsRef<Path>, T: Serialize>(
@@ -35,13 +40,12 @@ fn write_data_with_timestamp_ext<P: AsRef<Path>, T: Serialize>(
     ext: &str,
 ) -> std::io::Result<()> {
     let timestamp = chrono::Local::now().to_rfc3339();
-    let route_file = {
+    let file = {
         let mut dst = dir.as_ref().to_owned();
         dst.push(format!("{}.{}", timestamp, ext));
         dst
     };
-    write_data(route_file, data)?;
-    Ok(())
+    write_data(file, data)
 }
 
 fn write_data<P: AsRef<Path> + Send + 'static, T: Serialize>(
@@ -84,11 +88,15 @@ pub fn load_latest_router_table<P: AsRef<Path>>(
 
 pub fn load_latest_code_table<P: AsRef<Path>>(
     router_directory: P,
-) -> std::io::Result<Option<(TimeStamp, HashMap<Id, Code>)>> {
-    let latest = get_latest_file_with_ext(router_directory, CODE_EXT)?;
+) -> std::io::Result<Option<HashMap<Id, Code>>> {
+    let latest = {
+        let mut dst = router_directory.as_ref().to_owned();
+        dst.push(CODE_TABLE);
+        dst
+    };
     // load data
-    if let Some((time, entry)) = latest {
-        Ok(Some((time, load_data(entry.path())?)))
+    if latest.is_file() {
+        Ok(Some(load_data(latest)?))
     } else {
         Ok(None)
     }

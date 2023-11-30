@@ -61,8 +61,8 @@ impl RouterState {
                     }
                 };
             let code_table = match load_latest_code_table(&store).map_err(StateError::StoreError)? {
-                Some((time, table)) => {
-                    info!("code table loaded (time={time})");
+                Some(table) => {
+                    info!("code table loaded");
                     Arc::new(Mutex::new(table))
                 }
                 None => {
@@ -123,8 +123,8 @@ impl RouterState {
                 router_table_tmp.insert(code, route);
             }
             // write tables
-            write_router_table(&router_table_tmp, &store).map_err(StateError::StoreError)?;
             write_code_table(&code_table, &store).map_err(StateError::StoreError)?;
+            write_router_table(&router_table_tmp, &store).map_err(StateError::StoreError)?;
             Ok(router_table_tmp)
         })
         .await
