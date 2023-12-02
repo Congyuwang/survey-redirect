@@ -62,9 +62,7 @@ async fn main() {
         .init();
 
     // load state from disk
-    let state = RouterState::init(&server_config)
-        .await
-        .expect("error initing router table");
+    let state = RouterState::init(&server_config).expect("error initing router table");
 
     // router
     let api = Router::new().route("/", get(handler::redirect));

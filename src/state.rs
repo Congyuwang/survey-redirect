@@ -40,45 +40,31 @@ pub enum StateError {
 }
 
 impl RouterState {
-    /// load latest router table from disk, if any
-    pub async fn init(config: &Config) -> Result<Self, StateError> {
+    pub fn init(config: &Config) -> Result<Self, StateError> {
         // create store if not exist
-        tokio::fs::create_dir_all(&config.storage_root)
-            .await
-            .map_err(StateError::StoreError)?;
+        std::fs::create_dir_all(&config.storage_root).map_err(StateError::StoreError)?;
         // load stored states
         let store = config.storage_root.clone();
-        let (router_table, code_table) = tokio::task::spawn_blocking(move || {
-            let router_table =
-                match load_latest_router_table(&store).map_err(StateError::StoreError)? {
-                    Some((time, table)) => {
-                        info!("router table loaded (time={time})");
-                        Arc::new(RwLock::new(table))
-                    }
-                    None => {
-                        info!("new router table created");
-                        Arc::new(RwLock::new(HashMap::new()))
-                    }
-                };
-            let code_table = match load_latest_code_table(&store).map_err(StateError::StoreError)? {
-                Some(table) => {
-                    info!("code table loaded");
-                    Arc::new(Mutex::new(table))
-                }
-                None => {
-                    info!("new code table created");
-                    Arc::new(Mutex::new(HashMap::new()))
-                }
-            };
-            Ok((router_table, code_table))
-        })
-        .await
-        .map_err(|e| {
-            StateError::StoreError(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("background task error {e}"),
-            ))
-        })??;
+        let router_table = match load_latest_router_table(&store).map_err(StateError::StoreError)? {
+            Some((time, table)) => {
+                info!("router table loaded (time={time})");
+                Arc::new(RwLock::new(table))
+            }
+            None => {
+                info!("new router table created");
+                Arc::new(RwLock::new(HashMap::new()))
+            }
+        };
+        let code_table = match load_latest_code_table(&store).map_err(StateError::StoreError)? {
+            Some(table) => {
+                info!("code table loaded");
+                Arc::new(Mutex::new(table))
+            }
+            None => {
+                info!("new code table created");
+                Arc::new(Mutex::new(HashMap::new()))
+            }
+        };
         Ok(Self {
             router_url: config.base_url.clone(),
             router_table_store: config.storage_root.clone(),
