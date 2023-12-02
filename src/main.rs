@@ -31,11 +31,7 @@ pub const CONFIG_FILE_NAME: &str = "config.yaml";
 pub const BODY_LIMIT: usize = 128 * 1024 * 1024;
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// 1. redirect service
-/// 2. upload redirect table (id (str), url (str), params (dict))
-/// 3. get links
-#[tokio::main]
-async fn main() {
+fn main() {
     // read configuration
     let server_config = Config::load().expect("failed to load config");
 
@@ -64,6 +60,20 @@ async fn main() {
     // load state from disk
     let state = RouterState::init(&server_config).expect("error initing router table");
 
+    // init runtime
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to start runtime");
+
+    // start service
+    rt.block_on(server_main(server_config, state));
+}
+
+/// 1. redirect service
+/// 2. upload redirect table (id (str), url (str), params (dict))
+/// 3. get links
+async fn server_main(server_config: Config, state: RouterState) {
     // router
     let api = Router::new().route("/", get(handler::redirect));
     let admin = Router::new()
