@@ -4,7 +4,6 @@ use axum::{
     extract::{Query, State},
     http::{Request, StatusCode},
     response::{IntoResponse, Redirect, Response},
-    Json,
 };
 use tower_http::decompression::DecompressionBody;
 use tracing::{error, info, warn};
@@ -44,19 +43,15 @@ pub async fn put_routing_table(
         }
         Err(StateError::StoreError(e)) => {
             error!("storage error: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("storage error: {e}"),
-            )
-                .into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response()
+        }
+        Err(StateError::Busy) => {
+            warn!("put table api busy");
+            (StatusCode::TOO_MANY_REQUESTS, "busy, try again").into_response()
         }
         Err(e) => {
             error!("fatal, unknown error in put_routing_table: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("fatal, unknown error in put_routing_table: {:?}", e),
-            )
-                .into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, "unknown error").into_response()
         }
     }
 }
@@ -64,16 +59,16 @@ pub async fn put_routing_table(
 pub async fn get_links(State(state): State<RouterState>) -> Response {
     match state.get_links().await {
         Ok(links) => {
-            info!("got link request");
-            Json(links).into_response()
+            info!("get links request");
+            links
+        }
+        Err(StateError::Busy) => {
+            warn!("get links api busy");
+            (StatusCode::TOO_MANY_REQUESTS, "busy, try again").into_response()
         }
         Err(e) => {
             error!("fatal, unknown error in get_links: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("fatal, unknown error in get_links: {:?}", e),
-            )
-                .into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, "unknown error").into_response()
         }
     }
 }

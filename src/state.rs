@@ -1,4 +1,8 @@
 use crate::{config::Config, utility::*, API, CODE, CODE_LENGTH, EXTERNEL_ID};
+use axum::{
+    response::{IntoResponse, Response},
+    Json,
+};
 use parking_lot::{Mutex, MutexGuard};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
@@ -28,7 +32,7 @@ pub struct RedirectParams {
 pub struct RouterState {
     pub router_url: Url,
     pub router_table_store: PathBuf,
-    pub router_table: Arc<RwLock<HashMap<Code, Route>>>,
+    pub router_table: Arc<RwLock<HashMap<Code, Url>>>,
     pub code_table: Arc<Mutex<HashMap<Id, Code>>>,
 }
 
@@ -37,6 +41,7 @@ pub enum StateError {
     Unauthorized,
     InvalidCode,
     StoreError(std::io::Error),
+    Busy,
 }
 
 impl RouterState {
@@ -83,7 +88,6 @@ impl RouterState {
             .await
             .get(&redirect_params.code)
             .ok_or(StateError::InvalidCode)?
-            .url
             .clone();
         {
             let mut query = url.query_pairs_mut();
@@ -96,53 +100,46 @@ impl RouterState {
     // admin APIs
 
     /// replace routing table
+    ///
+    /// returns `Err(Busy)` if cannot acquire a lock of code_table.
     pub async fn put_routing_table(&self, data: Vec<Route>) -> Result<(), StateError> {
-        // use the sync table to reduce impect on redirect service
-        let code_table_lk = self.code_table.clone();
-        let store = self.router_table_store.clone();
-        // create new router table
-        let new_router_table = tokio::task::spawn_blocking(move || {
-            let mut router_table_tmp = HashMap::with_capacity(data.len());
-            let mut code_table = code_table_lk.lock();
-            for route in data {
-                let code = Self::get_code(&mut code_table, route.id.clone()).clone();
-                router_table_tmp.insert(code, route);
-            }
-            // write tables
-            write_code_table(&code_table, &store).map_err(StateError::StoreError)?;
-            write_router_table(&router_table_tmp, &store).map_err(StateError::StoreError)?;
-            Ok(router_table_tmp)
-        })
-        .await
-        .map_err(|e| {
-            StateError::StoreError(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("background task error {e}"),
-            ))
-        })??;
-
-        // update router tables
+        let new_router_table = {
+            let mut code_table_lk = self.code_table.try_lock().ok_or(StateError::Busy)?;
+            // at most one block_in_place call
+            tokio::task::block_in_place(|| {
+                let mut tmp = HashMap::with_capacity(data.len());
+                for route in data {
+                    let code = Self::get_code(&mut code_table_lk, route.id).clone();
+                    tmp.insert(code, route.url);
+                }
+                // write tables
+                write_code_table(&code_table_lk, &self.router_table_store)
+                    .map_err(StateError::StoreError)?;
+                write_router_table(&tmp, &self.router_table_store)
+                    .map_err(StateError::StoreError)?;
+                Ok::<_, StateError>(tmp)
+            })?
+        };
         *self.router_table.write().await = new_router_table;
-
         Ok(())
     }
 
     /// get all links
-    pub async fn get_links(&self) -> Result<HashMap<Id, Url>, StateError> {
-        Ok(self
-            .router_table
-            .read()
-            .await
-            .iter()
-            .map(|(code, route)| {
-                (route.id.clone(), {
-                    let mut url = self.router_url.clone();
-                    url.set_path(API);
-                    url.query_pairs_mut().append_pair(CODE, &code.0).finish();
-                    url
-                })
-            })
-            .collect::<HashMap<_, _>>())
+    ///
+    /// returns `Err(Busy)` if cannot acquire a lock of code_table.
+    pub async fn get_links(&self) -> Result<Response, StateError> {
+        let router_table_lk = self.router_table.read().await;
+        let code_table_lk = self.code_table.try_lock().ok_or(StateError::Busy)?;
+        let mut links: HashMap<&Id, Url> = HashMap::with_capacity(router_table_lk.len());
+        for (id, code) in code_table_lk.iter() {
+            if router_table_lk.contains_key(code) {
+                let mut url = self.router_url.clone();
+                url.set_path(API);
+                url.query_pairs_mut().append_pair(CODE, &code.0).finish();
+                links.insert(id, url);
+            }
+        }
+        Ok(Json(links).into_response())
     }
 
     /// lookup or gen code.

@@ -1,6 +1,6 @@
 //! All functions in this file are blocking functions!
 //! Must call within `spawn_blocking`.
-use crate::state::{Code, Id, Route};
+use crate::state::{Code, Id};
 use chrono::{DateTime, FixedOffset};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fs::DirEntry;
@@ -9,6 +9,7 @@ use std::{
     io::{Read, Write},
     path::Path,
 };
+use url::Url;
 
 const JSON_EXT: &str = "json";
 const CODE_TABLE: &str = "code";
@@ -16,7 +17,7 @@ const CODE_TABLE: &str = "code";
 type TimeStamp = DateTime<FixedOffset>;
 
 pub fn write_router_table<P: AsRef<Path>>(
-    router_table: &HashMap<Code, Route>,
+    router_table: &HashMap<Code, Url>,
     router_directory: P,
 ) -> std::io::Result<()> {
     write_data_with_timestamp_ext(router_table, router_directory, JSON_EXT)
@@ -76,7 +77,7 @@ fn write_data<P: AsRef<Path> + Send + 'static, T: Serialize>(
 
 pub fn load_latest_router_table<P: AsRef<Path>>(
     router_directory: P,
-) -> std::io::Result<Option<(TimeStamp, HashMap<Code, Route>)>> {
+) -> std::io::Result<Option<(TimeStamp, HashMap<Code, Url>)>> {
     let latest = get_latest_file_with_ext(router_directory, JSON_EXT)?;
     // load data
     if let Some((time, entry)) = latest {
