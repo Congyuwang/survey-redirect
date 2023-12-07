@@ -26,7 +26,7 @@ pub mod utility;
 pub const EXTERNEL_ID: &str = "externalUserId";
 pub const API: &str = "api";
 pub const CODE: &str = "code";
-pub const CODE_LENGTH: usize = 64;
+pub const CODE_LENGTH: usize = 16;
 pub const CONFIG_FILE_NAME: &str = "config.yaml";
 pub const BODY_LIMIT: usize = 128 * 1024 * 1024;
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
