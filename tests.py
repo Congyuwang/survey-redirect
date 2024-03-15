@@ -3,6 +3,7 @@ import atexit
 import shutil
 import os
 import sys
+import time
 from typing import List, Tuple, Dict
 from subprocess import Popen
 from urllib.parse import urlparse, parse_qs
@@ -33,17 +34,29 @@ def test_redirects(links_table: Dict[str, str], test_cases: List[Tuple[str, str,
         assert(query["externalUserId"][0] == code)
 
 
+def build_server():
+    compile = Popen(
+        ["cargo", "build", "--release"],
+        stdout=sys.stdout.buffer,
+        stderr=sys.stderr.buffer
+    )
+    compile.wait()
+
+
 def launch_server() -> Popen:
     server = Popen(
         ["cargo", "run", "--release"],
         stdout=sys.stdout.buffer,
         stderr=sys.stderr.buffer
     )
+    # wait for server to start
+    time.sleep(1)
     print_green("Server started")
     return server
 
 
 # Start the server
+build_server()
 server = launch_server()
 
 
@@ -51,7 +64,8 @@ server = launch_server()
 def cleanup():
     server.terminate()
     shutil.rmtree("./db", ignore_errors=True)
-    os.remove("./survey_redirect.log")
+    if os.path.exists("./survey_redirect.log"):
+        os.remove("./survey_redirect.log")
 
 atexit.register(cleanup)
 
