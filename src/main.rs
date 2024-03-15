@@ -3,7 +3,7 @@ use axum::{
     error_handling::HandleErrorLayer,
     extract::DefaultBodyLimit,
     http::StatusCode,
-    routing::{get, put},
+    routing::{get, patch, put},
     BoxError, Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
@@ -79,6 +79,7 @@ async fn server_main(server_config: Config, state: RouterState) {
     let admin = Router::new()
         .route("/get_links", get(handler::get_links))
         .route("/routing_table", put(handler::put_routing_table))
+        .route("/routing_table", patch(handler::patch_routing_table))
         .layer(
             ServiceBuilder::new()
                 .layer(HandleErrorLayer::new(|err: BoxError| async move {

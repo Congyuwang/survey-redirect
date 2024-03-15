@@ -124,6 +124,31 @@ impl RouterState {
         Ok(())
     }
 
+    /// partially update routing table
+    ///
+    /// returns `Err(Busy)` if cannot acquire a lock of code_table.
+    pub async fn patch_routing_table(&self, data: Vec<Route>) -> Result<(), StateError> {
+        let new_router_table = {
+            let mut tmp = self.router_table.read().await.clone();
+            let mut code_table_lk = self.code_table.try_lock().ok_or(StateError::Busy)?;
+            // at most one block_in_place call
+            tokio::task::block_in_place(|| {
+                for route in data {
+                    let code = Self::get_code(&mut code_table_lk, route.id).clone();
+                    tmp.insert(code, route.url);
+                }
+                // write tables
+                write_code_table(&code_table_lk, &self.router_table_store)
+                    .map_err(StateError::StoreError)?;
+                write_router_table(&tmp, &self.router_table_store)
+                    .map_err(StateError::StoreError)?;
+                Ok::<_, StateError>(tmp)
+            })?
+        };
+        *self.router_table.write().await = new_router_table;
+        Ok(())
+    }
+
     /// get all links
     ///
     /// returns `Err(Busy)` if cannot acquire a lock of code_table.

@@ -56,6 +56,34 @@ pub async fn put_routing_table(
     }
 }
 
+pub async fn patch_routing_table(
+    State(state): State<RouterState>,
+    req: Request<DecompressionBody<Body>>,
+) -> Response {
+    let data = match decode_request(req).await {
+        Ok(data) => data,
+        Err(rsp) => return rsp,
+    };
+    match state.patch_routing_table(data).await {
+        Ok(_) => {
+            info!("patch table success");
+            (StatusCode::OK, "success").into_response()
+        }
+        Err(StateError::StoreError(e)) => {
+            error!("storage error: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response()
+        }
+        Err(StateError::Busy) => {
+            warn!("put table api busy");
+            (StatusCode::TOO_MANY_REQUESTS, "busy, try again").into_response()
+        }
+        Err(e) => {
+            error!("fatal, unknown error in patch_routing_table: {:?}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "unknown error").into_response()
+        }
+    }
+}
+
 pub async fn get_links(State(state): State<RouterState>) -> Response {
     match state.get_links().await {
         Ok(links) => {
