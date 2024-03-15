@@ -14,6 +14,10 @@ jobs:
           command: |
             cargo build --release
             mv ./target/release/survey-redirect ./target/release/survey-redirect-x86_64-<< parameters.os >>
+      - run:
+          name: "Test"
+          command: |
+            python tests.py
       - store_artifacts:
           name: "Save Binary"
           path: ./target/release/survey-redirect-x86_64-<< parameters.os >>
