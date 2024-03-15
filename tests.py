@@ -35,20 +35,12 @@ def test_redirects(links_table: Dict[str, str], test_cases: List[Tuple[str, str,
 
 
 def build_server():
-    compile = Popen(
-        ["cargo", "build", "--release"],
-        stdout=sys.stdout.buffer,
-        stderr=sys.stderr.buffer
-    )
+    compile = Popen(["cargo", "build", "--release"])
     compile.wait()
 
 
 def launch_server() -> Popen:
-    server = Popen(
-        ["cargo", "run", "--release"],
-        stdout=sys.stdout.buffer,
-        stderr=sys.stderr.buffer
-    )
+    server = Popen(["cargo", "run", "--release"])
     # wait for server to start
     time.sleep(1)
     print_green("Server started")

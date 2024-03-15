@@ -1,11 +1,11 @@
 use crate::state::{RedirectParams, Route, RouterState, StateError};
 use axum::{
-    body::{Body, HttpBody},
+    body::Body,
     extract::{Query, State},
     http::{Request, StatusCode},
     response::{IntoResponse, Redirect, Response},
 };
-use tower_http::decompression::DecompressionBody;
+use futures::StreamExt;
 use tracing::{error, info, warn};
 
 pub async fn redirect(
@@ -28,10 +28,7 @@ pub async fn redirect(
     }
 }
 
-pub async fn put_routing_table(
-    State(state): State<RouterState>,
-    req: Request<DecompressionBody<Body>>,
-) -> Response {
+pub async fn put_routing_table(State(state): State<RouterState>, req: Request<Body>) -> Response {
     let data = match decode_request(req).await {
         Ok(data) => data,
         Err(rsp) => return rsp,
@@ -56,10 +53,7 @@ pub async fn put_routing_table(
     }
 }
 
-pub async fn patch_routing_table(
-    State(state): State<RouterState>,
-    req: Request<DecompressionBody<Body>>,
-) -> Response {
+pub async fn patch_routing_table(State(state): State<RouterState>, req: Request<Body>) -> Response {
     let data = match decode_request(req).await {
         Ok(data) => data,
         Err(rsp) => return rsp,
@@ -74,7 +68,7 @@ pub async fn patch_routing_table(
             (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response()
         }
         Err(StateError::Busy) => {
-            warn!("put table api busy");
+            warn!("patch table api busy");
             (StatusCode::TOO_MANY_REQUESTS, "busy, try again").into_response()
         }
         Err(e) => {
@@ -102,15 +96,19 @@ pub async fn get_links(State(state): State<RouterState>) -> Response {
 }
 
 /// Decompress and parse json data
-async fn decode_request(req: Request<DecompressionBody<Body>>) -> Result<Vec<Route>, Response> {
-    let data = match req.collect().await {
-        Ok(data) => data,
-        Err(e) => {
-            error!("error reading data: {e}");
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, "corrupt data").into_response());
+async fn decode_request(req: Request<Body>) -> Result<Vec<Route>, Response> {
+    let mut data = Vec::new();
+    let mut data_stream = req.into_body().into_data_stream();
+    while let Some(bytes) = data_stream.next().await {
+        match bytes {
+            Ok(bytes) => data.extend(bytes),
+            Err(e) => {
+                error!("error reading data: {e}");
+                return Err((StatusCode::BAD_REQUEST, "corrupt data").into_response());
+            }
         }
-    };
-    serde_json::from_slice(&data.to_bytes()).map_err(|e| {
+    }
+    serde_json::from_slice(&data).map_err(|e| {
         error!("json decode error: {e}");
         (StatusCode::BAD_REQUEST, "corrupt data").into_response()
     })
