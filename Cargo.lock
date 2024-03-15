@@ -1021,7 +1021,6 @@ dependencies = [
  "axum-server",
  "chrono",
  "config",
- "parking_lot",
  "rand",
  "serde",
  "serde_json",

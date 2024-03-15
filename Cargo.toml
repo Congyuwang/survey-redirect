@@ -10,18 +10,39 @@ opt-level = 3
 codegen-units = 1
 
 [dependencies]
-axum = { version = "0.6.20", default-features = false, features = ["json", "tokio", "query", "http1"] }
-axum-server = { version = "0.5.1", default-features = false, features = ["tls-rustls"] }
+axum = { version = "0.6.20", default-features = false, features = [
+    "json",
+    "tokio",
+    "query",
+    "http1",
+] }
+axum-server = { version = "0.5.1", default-features = false, features = [
+    "tls-rustls",
+] }
 chrono = { version = "0.4.31", default-features = false, features = ["clock"] }
 config = { version = "0.13.4", default-features = false, features = ["yaml"] }
-parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
 rand = "0.8.5"
 serde = "1.0.193"
 serde_json = "1.0.108"
 tempfile = "3.8.1"
-tokio = { version = "1.34.0", features = ["macros", "rt-multi-thread", "fs", "io-util", "parking_lot"] }
+tokio = { version = "1.34.0", features = [
+    "macros",
+    "rt-multi-thread",
+    "fs",
+    "io-util",
+    "parking_lot",
+] }
 tower = "0.4.13"
-tower-http = { version = "0.4.0", features = ["auth", "timeout", "decompression-gzip", "compression-gzip"] }
+tower-http = { version = "0.4.0", features = [
+    "auth",
+    "timeout",
+    "decompression-gzip",
+    "compression-gzip",
+] }
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "chrono", "parking_lot"] }
+tracing-subscriber = { version = "0.3.18", features = [
+    "env-filter",
+    "chrono",
+    "parking_lot",
+] }
 url = { version = "2.4.1", features = ["serde"] }
