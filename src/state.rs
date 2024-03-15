@@ -103,7 +103,7 @@ impl RouterState {
     /// returns `Err(Busy)` if cannot acquire a lock of code_table.
     pub async fn put_routing_table(&self, data: Vec<Route>) -> Result<(), StateError> {
         let new_router_table = {
-            let mut code_table_lk = self.code_table.try_lock().or(Err(StateError::Busy))?;
+            let mut code_table_lk = self.code_table.try_lock().map_err(|_| StateError::Busy)?;
             // at most one block_in_place call
             tokio::task::block_in_place(|| {
                 let mut tmp = HashMap::with_capacity(data.len());
@@ -152,8 +152,8 @@ impl RouterState {
     ///
     /// returns `Err(Busy)` if cannot acquire a lock of code_table.
     pub async fn get_links(&self) -> Result<Response, StateError> {
-        let router_table_lk = self.router_table.read().await;
         let code_table_lk = self.code_table.try_lock().map_err(|_| StateError::Busy)?;
+        let router_table_lk = self.router_table.read().await;
         let mut links: HashMap<&Id, Url> = HashMap::with_capacity(router_table_lk.len());
         for (id, code) in code_table_lk.iter() {
             if router_table_lk.contains_key(code) {
@@ -169,12 +169,14 @@ impl RouterState {
     /// lookup or gen code.
     #[inline]
     fn get_code<'a>(code_table: &'a mut MutexGuard<HashMap<Id, Code>>, id: Id) -> &'a Code {
-        code_table.entry(id).or_insert(Code(
-            rand::thread_rng()
-                .sample_iter(Alphanumeric)
-                .take(CODE_LENGTH)
-                .map(char::from)
-                .collect::<String>(),
-        ))
+        code_table.entry(id).or_insert_with(|| {
+            Code(
+                rand::thread_rng()
+                    .sample_iter(Alphanumeric)
+                    .take(CODE_LENGTH)
+                    .map(char::from)
+                    .collect::<String>(),
+            )
+        })
     }
 }
