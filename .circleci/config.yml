@@ -14,6 +14,16 @@ jobs:
           command: |
             cargo build --release
             mv ./target/release/survey-redirect ./target/release/survey-redirect-x86_64-<< parameters.os >>
+      - run:
+          name: "Install python3"
+          command: |
+            apt update
+            apt install python3 python3-pip -y
+            pip3 install requests tqdm
+      - run:
+          name: "Test"
+          command: |
+            python3 tests.py
       - store_artifacts:
           name: "Save Binary"
           path: ./target/release/survey-redirect-x86_64-<< parameters.os >>

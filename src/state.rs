@@ -3,11 +3,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use parking_lot::{Mutex, MutexGuard};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, MutexGuard, RwLock};
 use tracing::info;
 use url::Url;
 
@@ -104,10 +103,35 @@ impl RouterState {
     /// returns `Err(Busy)` if cannot acquire a lock of code_table.
     pub async fn put_routing_table(&self, data: Vec<Route>) -> Result<(), StateError> {
         let new_router_table = {
-            let mut code_table_lk = self.code_table.try_lock().ok_or(StateError::Busy)?;
+            let mut code_table_lk = self.code_table.try_lock().or(Err(StateError::Busy))?;
             // at most one block_in_place call
             tokio::task::block_in_place(|| {
                 let mut tmp = HashMap::with_capacity(data.len());
+                for route in data {
+                    let code = Self::get_code(&mut code_table_lk, route.id).clone();
+                    tmp.insert(code, route.url);
+                }
+                // write tables
+                write_code_table(&code_table_lk, &self.router_table_store)
+                    .map_err(StateError::StoreError)?;
+                write_router_table(&tmp, &self.router_table_store)
+                    .map_err(StateError::StoreError)?;
+                Ok::<_, StateError>(tmp)
+            })?
+        };
+        *self.router_table.write().await = new_router_table;
+        Ok(())
+    }
+
+    /// partially update routing table
+    ///
+    /// returns `Err(Busy)` if cannot acquire a lock of code_table.
+    pub async fn patch_routing_table(&self, data: Vec<Route>) -> Result<(), StateError> {
+        let new_router_table = {
+            let mut code_table_lk = self.code_table.try_lock().map_err(|_| StateError::Busy)?;
+            let mut tmp = self.router_table.read().await.clone();
+            // at most one block_in_place call
+            tokio::task::block_in_place(|| {
                 for route in data {
                     let code = Self::get_code(&mut code_table_lk, route.id).clone();
                     tmp.insert(code, route.url);
@@ -129,7 +153,7 @@ impl RouterState {
     /// returns `Err(Busy)` if cannot acquire a lock of code_table.
     pub async fn get_links(&self) -> Result<Response, StateError> {
         let router_table_lk = self.router_table.read().await;
-        let code_table_lk = self.code_table.try_lock().ok_or(StateError::Busy)?;
+        let code_table_lk = self.code_table.try_lock().map_err(|_| StateError::Busy)?;
         let mut links: HashMap<&Id, Url> = HashMap::with_capacity(router_table_lk.len());
         for (id, code) in code_table_lk.iter() {
             if router_table_lk.contains_key(code) {

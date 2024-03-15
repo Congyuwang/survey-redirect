@@ -117,6 +117,36 @@ class ServeyRedirectSdk:
             response.raise_for_status()
             return (response.status_code, response.text)
 
+    def patch_redirect_tables(self, table: _List[Route]) -> _Tuple[int, str]:
+        """Patch redirect table of server.
+
+        Partially update redirect table with the given one
+        (i.e., insert new links, replace old links).
+
+        Args:
+            table (List[Route]): The redirect table to be put.
+
+        Returns:
+            Tuple[int, str]: The status code and response text.
+            (200, "success") if success. Raise exception otherwise.
+        """
+        # Check input
+        self.__check_table(table)
+
+        # Send request
+        url = self.server_url + "/admin/routing_table"
+        headers = {
+            "Content-Type": "application/json",
+            "Content-Encoding": "gzip",
+            "Authorization": "Bearer " + self.admin_token
+        }
+        data = _gzip.compress(_json.dumps([_asdict(dat) for dat in table]).encode("utf-8"))
+        with self.__progress_bar(desc="Uploading", total=len(data)) as t:
+            reader_wrapper = _ReaderWrapper(t.update, _BytesIO(data), len(data))
+            response = _requests.patch(url, headers=headers, data=reader_wrapper, timeout=TIMEOUT)
+            response.raise_for_status()
+            return (response.status_code, response.text)
+
     def __check_table(self, table: _List[Route]):
         if not isinstance(table, list):
             raise Exception("Not a list")

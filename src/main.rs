@@ -3,16 +3,14 @@ use axum::{
     error_handling::HandleErrorLayer,
     extract::DefaultBodyLimit,
     http::StatusCode,
-    routing::{get, put},
+    routing::{get, patch, put},
     BoxError, Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
 use std::{fs::OpenOptions, time::Duration};
 use tower::ServiceBuilder;
 use tower_http::{
-    compression::CompressionLayer,
-    decompression::{DecompressionLayer, RequestDecompressionLayer},
-    timeout::TimeoutLayer,
+    compression::CompressionLayer, decompression::RequestDecompressionLayer, timeout::TimeoutLayer,
     validate_request::ValidateRequestHeaderLayer,
 };
 use tracing::error;
@@ -79,6 +77,7 @@ async fn server_main(server_config: Config, state: RouterState) {
     let admin = Router::new()
         .route("/get_links", get(handler::get_links))
         .route("/routing_table", put(handler::put_routing_table))
+        .route("/routing_table", patch(handler::patch_routing_table))
         .layer(
             ServiceBuilder::new()
                 .layer(HandleErrorLayer::new(|err: BoxError| async move {
@@ -88,7 +87,6 @@ async fn server_main(server_config: Config, state: RouterState) {
                 .layer(RequestDecompressionLayer::new().gzip(true)),
         )
         .layer(CompressionLayer::new().gzip(true))
-        .layer(DecompressionLayer::new().gzip(true))
         .layer(ValidateRequestHeaderLayer::bearer(
             &server_config.admin_token,
         ))

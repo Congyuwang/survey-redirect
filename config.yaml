@@ -1,5 +1,5 @@
-server_binding: 0.0.0.0:443
-base_url: http://127.0.0.1:443
+server_binding: 0.0.0.0:6688
+base_url: http://127.0.0.1:6688
 admin_token: "00000000000000000000"
 storage_root: "db"
 log_file: "survey_redirect.log"
