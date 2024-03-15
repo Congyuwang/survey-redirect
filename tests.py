@@ -53,7 +53,7 @@ atexit.register(cleanup)
 
 # Initialize the SDK
 
-TEST_URL = 'http://127.0.0.1:443'
+TEST_URL = 'http://127.0.0.1:6688'
 ADMIN_TOKEN = '00000000000000000000'
 sdk = sr.ServeyRedirectSdk(TEST_URL, ADMIN_TOKEN)
 
