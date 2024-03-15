@@ -2,8 +2,9 @@ import requests
 import atexit
 import shutil
 import os
+import sys
 from typing import List, Tuple, Dict
-from subprocess import Popen, PIPE
+from subprocess import Popen
 from urllib.parse import urlparse, parse_qs
 import sdk.survey_redirect as sr
 
@@ -33,7 +34,11 @@ def test_redirects(links_table: Dict[str, str], test_cases: List[Tuple[str, str,
 
 
 def launch_server() -> Popen:
-    server = Popen(["cargo", "run", "--release"], stdout=PIPE, stderr=PIPE)
+    server = Popen(
+        ["cargo", "run", "--release"],
+        stdout=sys.stdout.buffer,
+        stderr=sys.stderr.buffer
+    )
     print_green("Server started")
     return server
 

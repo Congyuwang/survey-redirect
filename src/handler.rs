@@ -113,7 +113,7 @@ async fn decode_request(mut req: Request<DecompressionBody<Body>>) -> Result<Vec
             }
         }
     }
-    serde_json::from_slice::<Vec<Route>>(&data).map_err(|e| {
+    serde_json::from_slice(&data).map_err(|e| {
         error!("json decode error: {e}");
         (StatusCode::BAD_REQUEST, "corrupt data").into_response()
     })
