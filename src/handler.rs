@@ -68,7 +68,7 @@ pub async fn patch_routing_table(State(state): State<RouterState>, req: Request<
             (StatusCode::INTERNAL_SERVER_ERROR, "storage error").into_response()
         }
         Err(StateError::Busy) => {
-            warn!("put table api busy");
+            warn!("patch table api busy");
             (StatusCode::TOO_MANY_REQUESTS, "busy, try again").into_response()
         }
         Err(e) => {
