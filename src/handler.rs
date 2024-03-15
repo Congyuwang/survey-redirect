@@ -102,18 +102,15 @@ pub async fn get_links(State(state): State<RouterState>) -> Response {
 }
 
 /// Decompress and parse json data
-async fn decode_request(mut req: Request<DecompressionBody<Body>>) -> Result<Vec<Route>, Response> {
-    let mut data = Vec::new();
-    while let Some(chunk) = req.body_mut().data().await {
-        match chunk {
-            Ok(chunk) => data.extend_from_slice(&chunk[..]),
-            Err(e) => {
-                error!("error reading data: {e}");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "corrupt data").into_response());
-            }
+async fn decode_request(req: Request<DecompressionBody<Body>>) -> Result<Vec<Route>, Response> {
+    let data = match req.collect().await {
+        Ok(data) => data,
+        Err(e) => {
+            error!("error reading data: {e}");
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, "corrupt data").into_response());
         }
-    }
-    serde_json::from_slice(&data).map_err(|e| {
+    };
+    serde_json::from_slice(&data.to_bytes()).map_err(|e| {
         error!("json decode error: {e}");
         (StatusCode::BAD_REQUEST, "corrupt data").into_response()
     })
