@@ -17,11 +17,11 @@ TIMEOUT = 30
 
 @_dataclass
 class Route:
-    id: str
+    uid: str
     url: str
 
-    def __init__(self, id: str, url: str, params: _Dict[str, str]):
-        self.id = id
+    def __init__(self, uid: str, url: str, params: _Dict[str, str]):
+        self.uid = uid
         # parse url
         url_parts = _parse.urlparse(url)
         # parse params

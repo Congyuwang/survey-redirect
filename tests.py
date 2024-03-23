@@ -91,7 +91,7 @@ print_green("Redirect functionality passed!")
 # Test replacing redirect tables
 
 sdk.put_redirect_tables([
-    sr.Route(id="user0", url="http://url_for_user0.com", params={"_id": "user0", "new_param": "new_value"}),
+    sr.Route(uid="user0", url="http://url_for_user0.com", params={"_id": "user0", "new_param": "new_value"}),
 ])
 # assert links not changed
 new_links = sdk.get_links()
@@ -112,8 +112,8 @@ print_green("Restore links passed!")
 # Test partial update (patch) of redirect tables
 
 sdk.patch_redirect_tables([
-    sr.Route(id="user0", url="http://url_for_user0.com", params={"_id": "user0", "new_param": "new_value"}),
-    sr.Route(id="user4", url="http://url_for_user4.com", params={"_id": "user4"}),
+    sr.Route(uid="user0", url="http://url_for_user0.com", params={"_id": "user0", "new_param": "new_value"}),
+    sr.Route(uid="user4", url="http://url_for_user4.com", params={"_id": "user4"}),
 ])
 new_links = sdk.get_links()
 for id in ["user0", "user1", "user2"]:
