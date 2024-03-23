@@ -1,6 +1,6 @@
 //! All functions in this file are blocking functions!
 //! Must call within `spawn_blocking`.
-use crate::state::{Code, Id};
+use crate::state::{Code, Uid};
 use chrono::{DateTime, FixedOffset};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fs::DirEntry;
@@ -24,7 +24,7 @@ pub fn write_router_table<P: AsRef<Path>>(
 }
 
 pub fn write_code_table<P: AsRef<Path>>(
-    code_table: &HashMap<Id, Code>,
+    code_table: &HashMap<Uid, Code>,
     router_directory: P,
 ) -> std::io::Result<()> {
     let file = {
@@ -89,7 +89,7 @@ pub fn load_latest_router_table<P: AsRef<Path>>(
 
 pub fn load_latest_code_table<P: AsRef<Path>>(
     router_directory: P,
-) -> std::io::Result<Option<HashMap<Id, Code>>> {
+) -> std::io::Result<Option<HashMap<Uid, Code>>> {
     let latest = {
         let mut dst = router_directory.as_ref().to_owned();
         dst.push(CODE_TABLE);
