@@ -71,7 +71,7 @@ async fn handle_conn_tls(
 ) {
     // wait for tls handshake
     let Ok(stream) = tls_acceptor.accept(con).await else {
-        tracing::error!("error during tls handshake connection from {}", addr);
+        tracing::warn!("error during tls handshake connection from {}", addr);
         return;
     };
     serve_conn(app, TokioIo::new(stream), addr).await;
@@ -94,12 +94,19 @@ async fn serve_conn<I: hyper::rt::Read + hyper::rt::Write + Unpin + 'static>(
         app.as_service().call(request)
     });
 
-    if let Err(e) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+    if let Err(err) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
         .http1()
         .serve_connection(stream, hyper_service)
         .await
     {
-        tracing::error!("error serving connection from {}: {}", addr, e);
+        // skip tls UnexpectedEof:
+        // https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof
+        if !err
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::UnexpectedEof)
+        {
+            tracing::error!("error serving connection from {}: {}", addr, err)
+        }
     }
 }
 
