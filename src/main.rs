@@ -5,7 +5,6 @@ use axum::{
     Router,
 };
 use std::{fs::OpenOptions, time::Duration};
-use tokio_rustls::rustls;
 use tower_http::{
     compression::CompressionLayer, decompression::RequestDecompressionLayer, timeout::TimeoutLayer,
     validate_request::ValidateRequestHeaderLayer,
@@ -61,24 +60,30 @@ fn main() {
     // load state from disk
     let state = RouterState::init(&server_config).expect("error initing router table");
 
+    // define router
+    let app = router(&server_config, state);
+
     // init runtime
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("failed to start runtime");
 
-    // start service
-    rt.block_on(server_main(server_config, state, tls_config));
+    // run server
+    tracing::info!("server listening at {}", &server_config.server_binding);
+    if let Some(tls_config) = tls_config {
+        tracing::info!("serving with secured connections");
+        rt.block_on(server::start_server_tls(&server_config, &app, tls_config))
+            .expect("failed binding to address");
+    } else {
+        tracing::warn!("serving with insecure connections");
+        rt.block_on(server::start_server_nontls(&server_config, &app))
+            .expect("failed binding to address");
+    };
 }
 
-/// 1. redirect service
-/// 2. upload redirect table (id (str), url (str), params (dict))
-/// 3. get links
-async fn server_main(
-    server_config: Config,
-    state: RouterState,
-    tls_config: Option<rustls::ServerConfig>,
-) {
+/// define router
+fn router(server_config: &Config, state: RouterState) -> Router {
     // define router
     let api = Router::new().route("/", get(handler::redirect));
     let admin = Router::new()
@@ -91,23 +96,9 @@ async fn server_main(
             &server_config.admin_token,
         ))
         .layer(DefaultBodyLimit::max(BODY_LIMIT));
-    let app = Router::new()
+    Router::new()
         .nest("/api", api)
         .nest("/admin", admin)
         .layer(TimeoutLayer::new(DEFAULT_TIMEOUT))
-        .with_state(state);
-
-    // run server
-    tracing::info!("server listening at {}", &server_config.server_binding);
-    if let Some(tls_config) = tls_config {
-        tracing::info!("serving with secured connections");
-        server::start_server_tls(&server_config, &app, tls_config)
-            .await
-            .expect("failed binding to address");
-    } else {
-        tracing::warn!("serving with insecure connections");
-        server::start_server_nontls(&server_config, &app)
-            .await
-            .expect("failed binding to address");
-    };
+        .with_state(state)
 }
