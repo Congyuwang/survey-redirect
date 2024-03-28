@@ -4,8 +4,8 @@ use axum::{
     routing::{get, patch, put},
     Router,
 };
-use axum_server::tls_rustls::RustlsConfig;
 use std::{fs::OpenOptions, time::Duration};
+use tokio_rustls::rustls;
 use tower_http::{
     compression::CompressionLayer, decompression::RequestDecompressionLayer, timeout::TimeoutLayer,
     validate_request::ValidateRequestHeaderLayer,
@@ -14,6 +14,7 @@ use tracing_subscriber::prelude::*;
 
 pub mod config;
 pub mod handler;
+pub mod server;
 pub mod state;
 pub mod utility;
 
@@ -28,6 +29,12 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 fn main() {
     // read configuration
     let server_config = Config::load().expect("failed to load config");
+
+    // load tls config if any
+    let tls_config = server_config
+        .server_tls
+        .as_ref()
+        .map(|tls| server::load_certs_key(tls).expect("failed to load tls files"));
 
     // configure log
     let timer = tracing_subscriber::fmt::time::ChronoLocal::rfc_3339();
@@ -45,7 +52,7 @@ fn main() {
         .with_writer(log_file);
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "survey_redirect=info".into()),
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "survey_redirect=debug".into()),
         ))
         .with(stdout_log)
         .with(log_to_file)
@@ -61,14 +68,18 @@ fn main() {
         .expect("failed to start runtime");
 
     // start service
-    rt.block_on(server_main(server_config, state));
+    rt.block_on(server_main(server_config, state, tls_config));
 }
 
 /// 1. redirect service
 /// 2. upload redirect table (id (str), url (str), params (dict))
 /// 3. get links
-async fn server_main(server_config: Config, state: RouterState) {
-    // router
+async fn server_main(
+    server_config: Config,
+    state: RouterState,
+    tls_config: Option<rustls::ServerConfig>,
+) {
+    // define router
     let api = Router::new().route("/", get(handler::redirect));
     let admin = Router::new()
         .route("/get_links", get(handler::get_links))
@@ -86,22 +97,17 @@ async fn server_main(server_config: Config, state: RouterState) {
         .layer(TimeoutLayer::new(DEFAULT_TIMEOUT))
         .with_state(state);
 
-    // start service
+    // run server
     tracing::info!("server listening at {}", &server_config.server_binding);
-    if let Some(tls) = &server_config.server_tls {
+    if let Some(tls_config) = tls_config {
         tracing::info!("serving with secured connections");
-        let tls_config = RustlsConfig::from_pem_file(&tls.cert, &tls.key)
+        server::start_server_tls(&server_config, &app, tls_config)
             .await
-            .expect("invalid tls config");
-        axum_server::bind_rustls(server_config.server_binding, tls_config)
-            .serve(app.into_make_service())
-            .await
-            .expect("service failed")
+            .expect("failed binding to address");
     } else {
         tracing::warn!("serving with insecure connections");
-        axum_server::bind(server_config.server_binding)
-            .serve(app.into_make_service())
+        server::start_server_nontls(&server_config, &app)
             .await
-            .expect("service failed")
+            .expect("failed binding to address");
     };
 }
