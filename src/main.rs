@@ -51,7 +51,7 @@ fn main() {
         .with_writer(log_file);
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "survey_redirect=debug".into()),
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "survey_redirect=info".into()),
         ))
         .with(stdout_log)
         .with(log_to_file)
