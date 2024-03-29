@@ -71,15 +71,8 @@ fn main() {
 
     // run server
     tracing::info!("server listening at {}", &server_config.server_binding);
-    if let Some(tls_config) = tls_config {
-        tracing::info!("serving with secured connections");
-        rt.block_on(server::start_server_tls(&server_config, &app, tls_config))
-            .expect("failed binding to address");
-    } else {
-        tracing::warn!("serving with insecure connections");
-        rt.block_on(server::start_server_nontls(&server_config, &app))
-            .expect("failed binding to address");
-    };
+    rt.block_on(server::run_server(&server_config, &app, tls_config))
+        .expect("failed binding to address");
 }
 
 /// define router
