@@ -22,7 +22,7 @@ pub async fn start_server_nontls(config: &Config, app: &Router) -> std::io::Resu
 
     loop {
         let new_conn = tokio::select! {
-            conn =tcp_listener.accept() => conn,
+            conn = tcp_listener.accept() => conn,
             _ = shutdown_tx.closed() => break,
         };
 
@@ -64,7 +64,7 @@ pub async fn start_server_tls(
 
     loop {
         let new_conn = tokio::select! {
-            conn =tcp_listener.accept() => conn,
+            conn = tcp_listener.accept() => conn,
             _ = shutdown_tx.closed() => break,
         };
 
