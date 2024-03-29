@@ -78,7 +78,8 @@ async fn handle_conn_tls(
 ) {
     // tls handshake
     let Ok(stream) = tls_acceptor.accept(con).await else {
-        tracing::trace!("error during tls handshake connection from {}", addr);
+        // quickly ignore all tls handshake failure.
+        // deny non-secured connections.
         return;
     };
     handle_conn(app, TokioIo::new(stream), close_rx, addr).await;
