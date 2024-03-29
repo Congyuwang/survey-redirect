@@ -15,20 +15,38 @@ use tower::Service;
 pub async fn start_server_nontls(config: &Config, app: &Router) -> std::io::Result<()> {
     // attempt to bind to address
     let tcp_listener = TcpListener::bind(config.server_binding).await?;
+    let shutdown_tx = shutdown_signal();
+
+    // connection counter
+    let (close_tx, close_rx) = tokio::sync::watch::channel(());
 
     loop {
-        // accept new connection
-        let Ok((con, addr)) = tcp_listener.accept().await else {
-            tracing::error!("error accepting connection");
+        let new_conn = tokio::select! {
+            conn =tcp_listener.accept() => conn,
+            _ = shutdown_tx.closed() => break,
+        };
+
+        let Ok((con, addr)) = new_conn else {
             continue;
         };
-        tracing::debug!("new connection from {}", addr);
 
         let app = app.clone();
-        tokio::spawn(async move {
-            handle_conn_nontls(app, con, &addr).await;
-        });
+        let close_rx = close_rx.clone();
+        tokio::spawn(serve_conn(app, TokioIo::new(con), close_rx, addr));
     }
+
+    // stop accepting new connections during shutdown periods
+    drop(tcp_listener);
+
+    // shutdown procedure: wait for connections to finish
+    drop(close_rx);
+    tracing::trace!(
+        "waiting for {} task(s) to finish",
+        close_tx.receiver_count()
+    );
+    close_tx.closed().await;
+
+    Ok(())
 }
 
 pub async fn start_server_tls(
@@ -39,27 +57,39 @@ pub async fn start_server_tls(
     // attempt to bind to address
     let tcp_listener = TcpListener::bind(config.server_binding).await?;
     let tls_acceptor = TlsAcceptor::from(Arc::new(tls_config));
+    let shutdown_tx = shutdown_signal();
+
+    // connection counter
+    let (close_tx, close_rx) = tokio::sync::watch::channel(());
 
     loop {
-        // accept new connection
-        let Ok((con, addr)) = tcp_listener.accept().await else {
-            tracing::error!("error accepting connection");
+        let new_conn = tokio::select! {
+            conn =tcp_listener.accept() => conn,
+            _ = shutdown_tx.closed() => break,
+        };
+
+        let Ok((con, addr)) = new_conn else {
             continue;
         };
-        tracing::debug!("new connection from {}", addr);
 
         let app = app.clone();
         let tls_acceptor = tls_acceptor.clone();
-        tokio::spawn(async move {
-            handle_conn_tls(app, con, tls_acceptor, &addr).await;
-        });
+        let close_rx = close_rx.clone();
+        tokio::spawn(handle_conn_tls(app, con, tls_acceptor, close_rx, addr));
     }
-}
 
-/// handle non-tls connection
-async fn handle_conn_nontls(app: Router, con: TcpStream, addr: &SocketAddr) {
-    // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
-    serve_conn(app, TokioIo::new(con), addr).await;
+    // stop accepting new connections during shutdown periods
+    drop(tcp_listener);
+
+    // shutdown procedure: wait for connections to finish
+    drop(close_rx);
+    tracing::trace!(
+        "waiting for {} task(s) to finish",
+        close_tx.receiver_count()
+    );
+    close_tx.closed().await;
+
+    Ok(())
 }
 
 /// handle tls connection
@@ -67,21 +97,23 @@ async fn handle_conn_tls(
     app: Router,
     con: TcpStream,
     tls_acceptor: TlsAcceptor,
-    addr: &SocketAddr,
+    close_rx: tokio::sync::watch::Receiver<()>,
+    addr: SocketAddr,
 ) {
     // wait for tls handshake
     let Ok(stream) = tls_acceptor.accept(con).await else {
-        tracing::warn!("error during tls handshake connection from {}", addr);
+        tracing::trace!("error during tls handshake connection from {}", addr);
         return;
     };
-    serve_conn(app, TokioIo::new(stream), addr).await;
+    serve_conn(app, TokioIo::new(stream), close_rx, addr).await;
 }
 
 /// serve an incoming connection.
 async fn serve_conn<I: hyper::rt::Read + hyper::rt::Write + Unpin + 'static>(
     app: Router,
     stream: I,
-    addr: &SocketAddr,
+    close_rx: tokio::sync::watch::Receiver<()>,
+    addr: SocketAddr,
 ) {
     // Hyper also has its own `Service` trait and doesn't use tower. We can use
     // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
@@ -105,9 +137,44 @@ async fn serve_conn<I: hyper::rt::Read + hyper::rt::Write + Unpin + 'static>(
             .downcast_ref::<std::io::Error>()
             .is_some_and(|e| e.kind() == std::io::ErrorKind::UnexpectedEof)
         {
-            tracing::error!("error serving connection from {}: {}", addr, err)
+            tracing::trace!("error serving connection from {}: {}", addr, err)
         }
     }
+
+    // decrease connection counter
+    drop(close_rx);
+}
+
+/// listen to shutdown signals, get `sender.closed()` if signaled.
+fn shutdown_signal() -> tokio::sync::watch::Sender<()> {
+    let (signal_tx, signal_rx) = tokio::sync::watch::channel(());
+    tokio::spawn(async move {
+        let ctrl_c = async {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to install Ctrl+C handler");
+        };
+
+        #[cfg(unix)]
+        let terminate = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to install signal handler")
+                .recv()
+                .await;
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+
+        tracing::trace!("received graceful shutdown signal. Telling tasks to shutdown");
+        drop(signal_rx);
+    });
+    signal_tx
 }
 
 /// load certificates and private keys from file (BLOCKING!!).
