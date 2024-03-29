@@ -1,5 +1,5 @@
 //! All server related code
-use crate::config::{Config, TlsConfig};
+use crate::config::TlsConfig;
 use axum::Router;
 use hyper::{body::Incoming, Request};
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -14,12 +14,12 @@ use tower::Service;
 
 /// run the server loop, handle shudown.
 pub async fn run_server(
-    config: &Config,
     app: &Router,
+    bind: SocketAddr,
     tls_config: Option<ServerConfig>,
 ) -> std::io::Result<()> {
     // attempt to bind to address
-    let tcp_listener = TcpListener::bind(config.server_binding).await?;
+    let tcp_listener = TcpListener::bind(bind).await?;
     let shutdown_tx = shutdown_signal();
     let tls_acceptor = tls_config.map(|tls| TlsAcceptor::from(Arc::new(tls)));
 

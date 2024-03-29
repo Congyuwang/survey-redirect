@@ -70,8 +70,9 @@ fn main() {
         .expect("failed to start runtime");
 
     // run server
-    tracing::info!("server listening at {}", &server_config.server_binding);
-    rt.block_on(server::run_server(&server_config, &app, tls_config))
+    let bind = server_config.server_binding;
+    tracing::info!("server listening at {}", bind);
+    rt.block_on(server::run_server(&app, bind, tls_config))
         .expect("failed binding to address");
 }
 
