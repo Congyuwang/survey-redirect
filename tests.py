@@ -40,7 +40,9 @@ def build_server():
 
 
 def launch_server() -> Popen:
-    server = Popen(["cargo", "run", "--release"])
+    env = os.environ.copy()
+    env["RUST_LOG"] = f"trace"
+    server = Popen(["cargo", "run", "--release"], env=env)
     # wait for server to start
     time.sleep(1)
     print_green("Server started")
