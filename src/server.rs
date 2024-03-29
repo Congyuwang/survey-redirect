@@ -4,7 +4,7 @@ use axum::Router;
 use hyper::{body::Incoming, Request};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rustls_pemfile::{certs, private_key};
-use std::{io::BufReader, net::SocketAddr, sync::Arc};
+use std::{io::BufReader, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{
     rustls::{self, ServerConfig},
@@ -37,8 +37,12 @@ pub async fn run_server(
             _ = shutdown_tx.closed() => break,
         };
 
-        let Ok((conn, addr)) = new_conn else {
-            continue;
+        let (conn, addr) = match new_conn {
+            Ok(conn) => conn,
+            Err(err) => {
+                handle_accept_error(err).await;
+                continue;
+            }
         };
 
         let app = app.clone();
@@ -72,7 +76,7 @@ async fn handle_conn_tls(
     close_rx: tokio::sync::watch::Receiver<()>,
     addr: SocketAddr,
 ) {
-    // wait for tls handshake
+    // tls handshake
     let Ok(stream) = tls_acceptor.accept(con).await else {
         tracing::trace!("error during tls handshake connection from {}", addr);
         return;
@@ -147,6 +151,34 @@ fn shutdown_signal() -> tokio::sync::watch::Sender<()> {
         drop(signal_rx);
     });
     signal_tx
+}
+
+/// [From `hyper::Server` in 0.14](https://github.com/hyperium/hyper/blob/v0.14.27/src/server/tcp.rs#L186)
+///
+/// > A possible scenario is that the process has hit the max open files
+/// > allowed, and so trying to accept a new connection will fail with
+/// > `EMFILE`. In some cases, it's preferable to just wait for some time, if
+/// > the application will likely close some files (or connections), and try
+/// > to accept the connection again. If this option is `true`, the error
+/// > will be logged at the `error` level, since it is still a big deal,
+/// > and then the listener will sleep for 1 second.
+///
+/// hyper allowed customizing this but axum does not.
+async fn handle_accept_error(err: std::io::Error) {
+    if !is_connection_error(&err) {
+        tracing::error!("accept error: {err}");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+#[inline]
+fn is_connection_error(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::ConnectionRefused
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::ConnectionReset
+    )
 }
 
 /// load certificates and private keys from file (BLOCKING!!).
