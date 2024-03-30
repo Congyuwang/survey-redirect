@@ -60,7 +60,7 @@ pub async fn run_server(
 
     // shutdown procedure: wait for connections to finish
     drop(close_rx);
-    tracing::trace!(
+    tracing::info!(
         "waiting for {} task(s) to finish",
         close_tx.receiver_count()
     );
@@ -150,7 +150,7 @@ fn shutdown_signal() -> tokio::sync::watch::Sender<()> {
             _ = terminate => {},
         }
 
-        tracing::trace!("received graceful shutdown signal. Telling tasks to shutdown");
+        tracing::info!("received graceful shutdown signal. Telling tasks to shutdown");
         drop(signal_rx);
     });
     signal_tx
