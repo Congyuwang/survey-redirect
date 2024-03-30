@@ -33,6 +33,7 @@ pub async fn run_server(
 
     loop {
         let new_conn = tokio::select! {
+            biased;
             conn = tcp_listener.accept() => conn,
             _ = shutdown_tx.closed() => break,
         };
@@ -144,6 +145,7 @@ fn shutdown_signal() -> tokio::sync::watch::Sender<()> {
         let terminate = std::future::pending::<()>();
 
         tokio::select! {
+            biased;
             _ = ctrl_c => {},
             _ = terminate => {},
         }
