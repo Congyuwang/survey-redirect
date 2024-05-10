@@ -69,6 +69,11 @@ def cleanup():
 atexit.register(cleanup)
 
 
+def gen_certs():
+    # refresh certs: run `./gen_certs.sh`
+    Popen(["./gen_certs.sh"])
+
+
 def tests():
     global server
     # Initialize the SDK
@@ -136,9 +141,10 @@ def tests():
     print_green("All tests passed!")
 
 
+gen_certs()
 tests()
-# refresh certs: run `./gen_certs.sh`
-Popen(["./gen_certs.sh"])
+
+gen_certs()
 # wait for server restart
 time.sleep(8)
 tests()
