@@ -71,7 +71,7 @@ atexit.register(cleanup)
 
 def gen_certs():
     # refresh certs: run `./gen_certs.sh`
-    Popen(["./gen_certs.sh"])
+    Popen(["bin/bash", "./gen_certs.sh"]).wait()
 
 
 def tests():
