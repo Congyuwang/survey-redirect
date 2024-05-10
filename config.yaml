@@ -1,5 +1,5 @@
-server_binding: 127.0.0.1:6688
-base_url: https://localhost:6688
+server_binding: 127.0.0.1:6689
+base_url: https://localhost:6689
 admin_token: "00000000000000000000"
 storage_root: "db"
 log_file: "survey_redirect.log"

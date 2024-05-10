@@ -10,7 +10,7 @@ from urllib.parse import urlparse, parse_qs
 import sdk.survey_redirect as sr
 
 
-TEST_URL = 'https://localhost:6688'
+TEST_URL = 'https://localhost:6689'
 ADMIN_TOKEN = '00000000000000000000'
 CERT_PATH = './dev_certs/localhost.crt'
 
@@ -44,6 +44,13 @@ def build_server():
     compile.wait()
 
 
+
+def gen_certs():
+    # refresh certs: run `./gen_certs.sh`
+    generate = Popen(["/bin/bash", "./gen_certs.sh"])
+    generate.wait()
+
+
 def launch_server() -> Popen:
     env = os.environ.copy()
     env["RUST_LOG"] = f"trace"
@@ -56,6 +63,7 @@ def launch_server() -> Popen:
 
 # Start the server
 build_server()
+gen_certs()
 server = launch_server()
 
 
@@ -67,12 +75,6 @@ def cleanup():
         os.remove("./survey_redirect.log")
 
 atexit.register(cleanup)
-
-
-def gen_certs():
-    # refresh certs: run `./gen_certs.sh`
-    Popen(["./gen_certs.sh"], shell=True, stdout=PIPE).wait()
-
 
 def tests():
     global server
@@ -141,10 +143,11 @@ def tests():
     print_green("All tests passed!")
 
 
-gen_certs()
+# Run the tests
 tests()
-
+# Update the certs
 gen_certs()
 # wait for server restart
 time.sleep(8)
+# Server should restart
 tests()
