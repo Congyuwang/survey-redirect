@@ -25,6 +25,9 @@ hyper-util = { version = "0.1", default-features = false, features = [
     "http1",
     "tokio",
 ] }
+notify = { version = "6.1.1", default-features = false, features = [
+    "macos_kqueue",
+] }
 rand = "0"
 rustls-pemfile = "2"
 serde = "1"

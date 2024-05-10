@@ -1,18 +1,13 @@
 //! All server related code
-use crate::config::TlsConfig;
 use axum::Router;
 use hyper::{body::Incoming, Request};
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use rustls_pemfile::{certs, private_key};
-use std::{io::BufReader, net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     net::{TcpListener, TcpStream},
     time::timeout,
 };
-use tokio_rustls::{
-    rustls::{self, ServerConfig},
-    TlsAcceptor,
-};
+use tokio_rustls::{rustls::ServerConfig, TlsAcceptor};
 use tower::Service;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -22,7 +17,8 @@ pub async fn run_server(
     app: &Router,
     bind: SocketAddr,
     tls_config: Option<ServerConfig>,
-) -> std::io::Result<()> {
+    mut restart_signal: tokio::sync::watch::Receiver<()>,
+) -> std::io::Result<bool> {
     // attempt to bind to address
     let tcp_listener = TcpListener::bind(bind).await?;
     let shutdown_tx = shutdown_signal();
@@ -36,11 +32,12 @@ pub async fn run_server(
     // connection counter
     let (close_tx, close_rx) = tokio::sync::watch::channel(());
 
-    loop {
+    let should_restart = loop {
         let new_conn = tokio::select! {
             biased;
             conn = tcp_listener.accept() => conn,
-            _ = shutdown_tx.closed() => break,
+            _ = shutdown_tx.closed() => break false,
+            _ = restart_signal.changed() => break true,
         };
 
         let (conn, addr) = match new_conn {
@@ -58,7 +55,7 @@ pub async fn run_server(
         } else {
             tokio::spawn(handle_conn(app, TokioIo::new(conn), close_rx, addr));
         }
-    }
+    };
 
     // stop accepting new connections during shutdown periods
     drop(tcp_listener);
@@ -75,7 +72,7 @@ pub async fn run_server(
         tracing::warn!("failed to close all connections");
     }
 
-    Ok(())
+    Ok(should_restart)
 }
 
 /// handle tls connection
@@ -191,30 +188,4 @@ fn is_connection_error(err: &std::io::Error) -> bool {
             | std::io::ErrorKind::ConnectionAborted
             | std::io::ErrorKind::ConnectionReset
     )
-}
-
-/// load certificates and private keys from file (BLOCKING!!).
-pub fn load_certs_key(config: &TlsConfig) -> std::io::Result<rustls::ServerConfig> {
-    let mut cert = BufReader::new(std::fs::File::open(&config.cert)?);
-    let mut key = BufReader::new(std::fs::File::open(&config.key)?);
-
-    let cert_chain = certs(&mut cert).collect::<std::io::Result<Vec<_>>>()?;
-    let key_der = private_key(&mut key)?.ok_or(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        format!("private key not found in {}", config.key.display()),
-    ))?;
-
-    let mut config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(cert_chain, key_der)
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("error configuring certs {e}"),
-            )
-        })?;
-
-    config.alpn_protocols = vec![b"http/1.1".to_vec()];
-
-    Ok(config)
 }

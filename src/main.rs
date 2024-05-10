@@ -4,7 +4,11 @@ use axum::{
     routing::{get, patch, put},
     Router,
 };
-use std::{fs::OpenOptions, time::Duration};
+use config::TlsConfig;
+use notify::Watcher;
+use rustls_pemfile::{certs, private_key};
+use std::{fs::OpenOptions, io::BufReader, time::Duration};
+use tokio_rustls::rustls;
 use tower_http::{
     compression::CompressionLayer, decompression::RequestDecompressionLayer, timeout::TimeoutLayer,
     validate_request::ValidateRequestHeaderLayer,
@@ -28,12 +32,6 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 fn main() {
     // read configuration
     let server_config = Config::load().expect("failed to load config");
-
-    // load tls config if any
-    let tls_config = server_config
-        .server_tls
-        .as_ref()
-        .map(|tls| server::load_certs_key(tls).expect("failed to load tls files"));
 
     // configure log
     let timer = tracing_subscriber::fmt::time::ChronoLocal::rfc_3339();
@@ -69,11 +67,56 @@ fn main() {
         .build()
         .expect("failed to start runtime");
 
-    // run server
     let bind = server_config.server_binding;
     tracing::info!("server listening at {}", bind);
-    rt.block_on(server::run_server(&app, bind, tls_config))
-        .expect("failed binding to address");
+
+    // watch cert changes
+    let (restart_signal_tx, mut restart_signal_rx) = tokio::sync::watch::channel(());
+    let mut cert_watcher =
+        notify::recommended_watcher(move |event: Result<notify::Event, notify::Error>| {
+            if event.is_ok() {
+                let _ = restart_signal_tx.send(());
+            }
+        })
+        .expect("failed to start watcher");
+
+    const CERTS_RETRY_TIMEOUT: Duration = Duration::from_secs(5);
+
+    loop {
+        // try to load tls config if any
+        let tls_config = match server_config
+            .server_tls
+            .as_ref()
+            .map(|tls| load_certs_key(tls, &mut cert_watcher))
+        {
+            Some(Ok(tls_config)) => Some(tls_config),
+            Some(Err(e)) => {
+                tracing::error!("failed to load certs {}, retrying...", e);
+                std::thread::sleep(CERTS_RETRY_TIMEOUT);
+                continue;
+            }
+            None => None,
+        };
+
+        tracing::info!("server running");
+        let should_restart = rt
+            .block_on(server::run_server(
+                &app,
+                bind,
+                tls_config,
+                restart_signal_rx.clone(),
+            ))
+            .expect("failed to bind to address");
+
+        if should_restart {
+            tracing::info!("certs change detected, waiting for certs to update");
+            std::thread::sleep(CERTS_RETRY_TIMEOUT);
+            // clear restart signal queue, before restarting
+            restart_signal_rx.mark_unchanged();
+        } else {
+            break;
+        }
+    }
 }
 
 /// define router
@@ -95,4 +138,40 @@ fn router(server_config: &Config, state: RouterState) -> Router {
         .nest("/admin", admin)
         .layer(TimeoutLayer::new(DEFAULT_TIMEOUT))
         .with_state(state)
+}
+
+/// load certificates and private keys from file (BLOCKING!!).
+pub fn load_certs_key(
+    config: &TlsConfig,
+    watcher: &mut notify::RecommendedWatcher,
+) -> std::io::Result<rustls::ServerConfig> {
+    let mut cert = BufReader::new(std::fs::File::open(&config.cert)?);
+    let mut key = BufReader::new(std::fs::File::open(&config.key)?);
+
+    let cert_chain = certs(&mut cert).collect::<std::io::Result<Vec<_>>>()?;
+    let key_der = private_key(&mut key)?.ok_or(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!("private key not found in {}", config.key.display()),
+    ))?;
+
+    let mut tls_config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(cert_chain, key_der)
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("error configuring certs {e}"),
+            )
+        })?;
+
+    watcher
+        .watch(&config.cert, notify::RecursiveMode::NonRecursive)
+        .expect("failed to watch cert");
+    watcher
+        .watch(&config.key, notify::RecursiveMode::NonRecursive)
+        .expect("failed to watch cert");
+
+    tls_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+
+    Ok(tls_config)
 }
