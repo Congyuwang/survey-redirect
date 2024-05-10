@@ -151,3 +151,9 @@ gen_certs()
 time.sleep(8)
 # Server should restart
 tests()
+# Update the certs
+gen_certs()
+# wait for server restart
+time.sleep(8)
+# Server should restart
+tests()
