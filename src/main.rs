@@ -4,7 +4,6 @@ use axum::{
     routing::{get, patch, put},
     Router,
 };
-use notify::Watcher;
 use std::{fs::OpenOptions, time::Duration};
 use tower_http::{
     compression::CompressionLayer, decompression::RequestDecompressionLayer, timeout::TimeoutLayer,
@@ -67,32 +66,10 @@ fn main() {
     let bind = server_config.server_binding;
     tracing::info!("server listening at {}", bind);
 
-    // watch cert changes
-    let (cert_update_signal_tx, cert_update_signal_rx) = tokio::sync::watch::channel(());
-    let mut cert_watcher =
-        notify::recommended_watcher(move |event: Result<notify::Event, notify::Error>| {
-            if event.is_ok() {
-                let _ = cert_update_signal_tx.send(());
-            }
-        })
-        .expect("failed to start watcher");
-    if let Some(config) = &server_config.server_tls {
-        cert_watcher
-            .watch(&config.cert, notify::RecursiveMode::NonRecursive)
-            .expect("failed to watch cert");
-        cert_watcher
-            .watch(&config.key, notify::RecursiveMode::NonRecursive)
-            .expect("failed to watch cert");
-    }
-
     // start server
-    rt.block_on(server::run_server(
-        &app,
-        bind,
-        &server_config.server_tls,
-        cert_update_signal_rx,
-    ))
-    .expect("failed to bind to address")
+    if let Err(e) = rt.block_on(server::run_server(&app, bind, &server_config.server_tls)) {
+        tracing::error!("failed to run server {}", e);
+    }
 }
 
 /// define router
