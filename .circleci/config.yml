@@ -6,7 +6,7 @@ jobs:
       os:
         type: string
     docker:
-      - image: congyuwang/rust-container:llvm17-stable-1.77.0-<< parameters.os >>
+      - image: congyuwang/rust-container:llvm18-stable-1.78.0-<< parameters.os >>
     steps:
       - checkout
       - run:

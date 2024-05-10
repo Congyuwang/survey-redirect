@@ -4,6 +4,7 @@ use axum::{
     routing::{get, patch, put},
     Router,
 };
+use notify::Watcher;
 use std::{fs::OpenOptions, time::Duration};
 use tower_http::{
     compression::CompressionLayer, decompression::RequestDecompressionLayer, timeout::TimeoutLayer,
@@ -28,12 +29,6 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 fn main() {
     // read configuration
     let server_config = Config::load().expect("failed to load config");
-
-    // load tls config if any
-    let tls_config = server_config
-        .server_tls
-        .as_ref()
-        .map(|tls| server::load_certs_key(tls).expect("failed to load tls files"));
 
     // configure log
     let timer = tracing_subscriber::fmt::time::ChronoLocal::rfc_3339();
@@ -69,11 +64,35 @@ fn main() {
         .build()
         .expect("failed to start runtime");
 
-    // run server
     let bind = server_config.server_binding;
     tracing::info!("server listening at {}", bind);
-    rt.block_on(server::run_server(&app, bind, tls_config))
-        .expect("failed binding to address");
+
+    // watch cert changes
+    let (cert_update_signal_tx, cert_update_signal_rx) = tokio::sync::watch::channel(());
+    let mut cert_watcher =
+        notify::recommended_watcher(move |event: Result<notify::Event, notify::Error>| {
+            if event.is_ok() {
+                let _ = cert_update_signal_tx.send(());
+            }
+        })
+        .expect("failed to start watcher");
+    if let Some(config) = &server_config.server_tls {
+        cert_watcher
+            .watch(&config.cert, notify::RecursiveMode::NonRecursive)
+            .expect("failed to watch cert");
+        cert_watcher
+            .watch(&config.key, notify::RecursiveMode::NonRecursive)
+            .expect("failed to watch cert");
+    }
+
+    // start server
+    rt.block_on(server::run_server(
+        &app,
+        bind,
+        &server_config.server_tls,
+        cert_update_signal_rx,
+    ))
+    .expect("failed to bind to address")
 }
 
 /// define router

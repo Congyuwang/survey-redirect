@@ -65,7 +65,7 @@ class ServeyRedirectSdk:
         self.server_url = server_url
         self.admin_token = admin_token
 
-    def get_links(self) -> _Dict[str, str]:
+    def get_links(self, **kwargs) -> _Dict[str, str]:
         """Get links from server.
 
         Returns:
@@ -76,7 +76,7 @@ class ServeyRedirectSdk:
             "Authorization": "Bearer " + self.admin_token,
             "Accept-Encoding": "gzip",
         }
-        response = _requests.get(url, stream=True, headers=headers, timeout=TIMEOUT)
+        response = _requests.get(url, stream=True, headers=headers, timeout=TIMEOUT, **kwargs)
         data = bytearray()
         total_size = int(response.headers.get('content-length', 0))
         with self.__progress_bar(desc="Downloading", total=total_size) as t:
@@ -87,7 +87,7 @@ class ServeyRedirectSdk:
         response.raise_for_status()
         return _json.loads(data)
 
-    def put_redirect_tables(self, table: _List[Route]) -> _Tuple[int, str]:
+    def put_redirect_tables(self, table: _List[Route], **kwargs) -> _Tuple[int, str]:
         """Put redirect table to server.
 
         Replaces the existing redirect table with the given one
@@ -113,11 +113,11 @@ class ServeyRedirectSdk:
         data = _gzip.compress(_json.dumps([_asdict(dat) for dat in table]).encode("utf-8"))
         with self.__progress_bar(desc="Uploading", total=len(data)) as t:
             reader_wrapper = _ReaderWrapper(t.update, _BytesIO(data), len(data))
-            response = _requests.put(url, headers=headers, data=reader_wrapper, timeout=TIMEOUT)
+            response = _requests.put(url, headers=headers, data=reader_wrapper, timeout=TIMEOUT, **kwargs)
             response.raise_for_status()
             return (response.status_code, response.text)
 
-    def patch_redirect_tables(self, table: _List[Route]) -> _Tuple[int, str]:
+    def patch_redirect_tables(self, table: _List[Route], **kwargs) -> _Tuple[int, str]:
         """Patch redirect table of server.
 
         Partially update redirect table with the given one
@@ -143,7 +143,7 @@ class ServeyRedirectSdk:
         data = _gzip.compress(_json.dumps([_asdict(dat) for dat in table]).encode("utf-8"))
         with self.__progress_bar(desc="Uploading", total=len(data)) as t:
             reader_wrapper = _ReaderWrapper(t.update, _BytesIO(data), len(data))
-            response = _requests.patch(url, headers=headers, data=reader_wrapper, timeout=TIMEOUT)
+            response = _requests.patch(url, headers=headers, data=reader_wrapper, timeout=TIMEOUT, **kwargs)
             response.raise_for_status()
             return (response.status_code, response.text)
 
