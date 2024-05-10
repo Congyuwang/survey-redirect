@@ -5,12 +5,17 @@ use hyper::{body::Incoming, Request};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rustls_pemfile::{certs, private_key};
 use std::{io::BufReader, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    time::timeout,
+};
 use tokio_rustls::{
     rustls::{self, ServerConfig},
     TlsAcceptor,
 };
 use tower::Service;
+
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// run the server loop, handle shudown.
 pub async fn run_server(
@@ -64,7 +69,11 @@ pub async fn run_server(
         "waiting for {} task(s) to finish",
         close_tx.receiver_count()
     );
-    close_tx.closed().await;
+
+    // wait for all connections to close
+    if timeout(DEFAULT_TIMEOUT, close_tx.closed()).await.is_err() {
+        tracing::warn!("failed to close all connections");
+    }
 
     Ok(())
 }
