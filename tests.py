@@ -5,7 +5,7 @@ import os
 import sys
 import time
 from typing import List, Tuple, Dict
-from subprocess import Popen
+from subprocess import Popen, PIPE
 from urllib.parse import urlparse, parse_qs
 import sdk.survey_redirect as sr
 
@@ -71,7 +71,7 @@ atexit.register(cleanup)
 
 def gen_certs():
     # refresh certs: run `./gen_certs.sh`
-    Popen(["bin/bash", "./gen_certs.sh"]).wait()
+    Popen(["./gen_certs.sh"], shell=True, stdout=PIPE).wait()
 
 
 def tests():
