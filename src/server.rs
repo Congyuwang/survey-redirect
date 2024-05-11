@@ -1,4 +1,5 @@
 //! All server related code
+use crate::config::TlsConfig;
 use axum::Router;
 use hyper::{body::Incoming, Request};
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -14,8 +15,6 @@ use tokio_rustls::{
     TlsAcceptor,
 };
 use tower::Service;
-
-use crate::config::TlsConfig;
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 const CERT_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
