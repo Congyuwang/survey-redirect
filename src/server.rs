@@ -260,7 +260,7 @@ fn load_certs_key_sync(config: &TlsConfig) -> std::io::Result<rustls::ServerConf
     Ok(tls_config)
 }
 
-// enable automatic certificate update
+/// enable automatic certificate update
 fn watch_cert_changes(
     tls_config: &Option<TlsConfig>,
 ) -> std::io::Result<(notify::RecommendedWatcher, tokio::sync::watch::Receiver<()>)> {
