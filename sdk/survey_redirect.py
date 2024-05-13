@@ -150,8 +150,6 @@ class ServeyRedirectSdk:
     def __check_table(self, table: _List[Route]):
         if not isinstance(table, list):
             raise Exception("Not a list")
-        if len(table) == 0:
-            raise Exception("Empty table")
         for route in table:
             if not isinstance(route, Route):
                 raise Exception("Not a Route object")
