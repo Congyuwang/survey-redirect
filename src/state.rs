@@ -152,18 +152,32 @@ impl RouterState {
     ///
     /// returns `Err(Busy)` if cannot acquire a lock of code_table.
     pub async fn get_links(&self) -> Result<Response, StateError> {
-        let code_table_lk = self.code_table.try_lock().map_err(|_| StateError::Busy)?;
-        let router_table_lk = self.router_table.read().await;
-        let mut links: HashMap<&Uid, Url> = HashMap::with_capacity(router_table_lk.len());
-        for (id, code) in code_table_lk.iter() {
-            if router_table_lk.contains_key(code) {
-                let mut url = self.router_url.clone();
-                url.set_path(API);
-                url.query_pairs_mut().append_pair(CODE, &code.0).finish();
-                links.insert(id, url);
+        let links = {
+            let code_table_lk = self.code_table.try_lock().map_err(|_| StateError::Busy)?;
+            let router_table_lk = self.router_table.read().await;
+            let mut links: HashMap<Uid, Url> = HashMap::with_capacity(router_table_lk.len());
+            for (id, code) in code_table_lk.iter() {
+                if router_table_lk.contains_key(code) {
+                    let mut url = self.router_url.clone();
+                    url.set_path(API);
+                    url.query_pairs_mut().append_pair(CODE, &code.0).finish();
+                    links.insert(id.clone(), url);
+                }
             }
-        }
+            links
+        };
         Ok(Json(links).into_response())
+    }
+
+    /// get all uid-codes mapping
+    ///
+    /// returns `Err(Busy)` if cannot acquire a lock of code_table.
+    pub async fn get_codes(&self) -> Result<Response, StateError> {
+        let codes = {
+            let code_table_lk = self.code_table.try_lock().map_err(|_| StateError::Busy)?;
+            code_table_lk.clone()
+        };
+        Ok(Json(codes).into_response())
     }
 
     /// lookup or gen code.

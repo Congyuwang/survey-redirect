@@ -87,6 +87,28 @@ class ServeyRedirectSdk:
         response.raise_for_status()
         return _json.loads(data)
 
+    def get_codes(self, **kwargs) -> _Dict[str, str]:
+        """Get links from server.
+
+        Returns:
+            Dict[str, str]: A mapping from user ID to their codes.
+        """
+        url = self.server_url + "/admin/get_codes"
+        headers = {
+            "Authorization": "Bearer " + self.admin_token,
+            "Accept-Encoding": "gzip",
+        }
+        response = _requests.get(url, stream=True, headers=headers, timeout=TIMEOUT, **kwargs)
+        data = bytearray()
+        total_size = int(response.headers.get('content-length', 0))
+        with self.__progress_bar(desc="Downloading", total=total_size) as t:
+            for chunk in response.iter_content(_CHUNK_SIZE):
+                if chunk:
+                    data.extend(chunk)
+                    t.update(len(chunk))
+        response.raise_for_status()
+        return _json.loads(data)
+
     def put_redirect_tables(self, table: _List[Route], **kwargs) -> _Tuple[int, str]:
         """Put redirect table to server.
 

@@ -1,3 +1,4 @@
+from enum import verify
 import requests
 import atexit
 import shutil
@@ -76,7 +77,7 @@ def cleanup():
 
 atexit.register(cleanup)
 
-def tests():
+def tests(check_codes = False):
     global server
     # Initialize the SDK
     sdk = sr.ServeyRedirectSdk(TEST_URL, ADMIN_TOKEN)
@@ -90,6 +91,8 @@ def tests():
     sdk.put_redirect_tables([sr.Route(id, url, params) for id, url, params in basic_test_cases], verify=CERT_PATH)
     links = sdk.get_links(verify=CERT_PATH)
     assert(set(links.keys()) == {"user0", "user1", "user2"})
+    if check_codes:
+        assert sdk.get_codes(verify=CERT_PATH) == {id: get_code_from_url(links[id]) for id in links.keys()}
     print_green("Basic puts passed!")
 
     # Test redirect functionality
@@ -144,7 +147,7 @@ def tests():
 
 
 # Run the tests
-tests()
+tests(True)
 # Update the certs
 gen_certs()
 # wait for server restart

@@ -95,6 +95,23 @@ pub async fn get_links(State(state): State<RouterState>) -> Response {
     }
 }
 
+pub async fn get_codes(State(state): State<RouterState>) -> Response {
+    match state.get_codes().await {
+        Ok(links) => {
+            info!("get codes request");
+            links
+        }
+        Err(StateError::Busy) => {
+            warn!("get codes api busy");
+            (StatusCode::TOO_MANY_REQUESTS, "busy, try again").into_response()
+        }
+        Err(e) => {
+            error!("fatal, unknown error in get_codes: {:?}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "unknown error").into_response()
+        }
+    }
+}
+
 /// Decompress and parse json data
 async fn decode_request(req: Request<Body>) -> Result<Vec<Route>, Response> {
     let mut data = Vec::new();
