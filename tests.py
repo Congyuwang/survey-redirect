@@ -1,4 +1,3 @@
-from enum import verify
 import requests
 import atexit
 import shutil
