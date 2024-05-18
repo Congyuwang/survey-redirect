@@ -14,7 +14,7 @@ pub struct Config {
     pub server_tls: Option<TlsConfig>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct TlsConfig {
     pub key: PathBuf,
     pub cert: PathBuf,

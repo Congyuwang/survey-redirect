@@ -5,7 +5,15 @@ use hyper::{body::Incoming, Request};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use notify::Watcher;
 use rustls_pemfile::{certs, private_key};
-use std::{io::BufReader, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    io::BufReader,
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::{
     net::{TcpListener, TcpStream},
     time::timeout,
@@ -28,12 +36,16 @@ pub async fn run_server(
     let tcp_listener = TcpListener::bind(bind).await?;
     let shutdown_tx = shutdown_signal();
     let mut tls_acceptor;
+    let cert_updating = AtomicBool::new(false);
 
     // connection counter
     let (close_tx, close_rx) = tokio::sync::watch::channel(());
 
     // watch cert changes
     let (_watcher, mut cert_update_signal_rx) = watch_cert_changes(tls_config)?;
+
+    // new cert receive channel
+    let (tls_acceptor_tx, mut tls_acceptor_rx) = tokio::sync::mpsc::channel(1);
 
     // load certs
     tls_acceptor = load_certs(tls_config).await;
@@ -42,16 +54,29 @@ pub async fn run_server(
     loop {
         let new_conn = tokio::select! {
             biased;
+            // new income connection
             conn = tcp_listener.accept() => conn,
-            _ = shutdown_tx.closed() => break,
+            // cert file changed signal
             _ = cert_update_signal_rx.changed() => {
-                tracing::info!("certs change detected");
-                tokio::time::sleep(CERT_RETRY_TIMEOUT).await;
-                tls_acceptor = load_certs(tls_config).await;
-                cert_update_signal_rx.mark_unchanged();
-                tracing::info!("cert updated");
+                let is_cert_updating = cert_updating.swap(true, Ordering::AcqRel);
+                if !is_cert_updating {
+                    tracing::info!("certs change detected");
+                    dispatch_cert_update_task(tls_config, &tls_acceptor_tx);
+                }
                 continue;
             },
+            // new cert loaded
+            new_tls_acceptor = tls_acceptor_rx.recv() => {
+                if let Some(new_tls_acceptor) = new_tls_acceptor {
+                    tls_acceptor = new_tls_acceptor;
+                    cert_update_signal_rx.mark_unchanged();
+                    cert_updating.store(false, Ordering::Release);
+                    tracing::info!("cert updated");
+                }
+                continue;
+            }
+            // shutdown signal
+            _ = shutdown_tx.closed() => break,
         };
 
         let (conn, addr) = match new_conn {
@@ -202,6 +227,19 @@ fn is_connection_error(err: &std::io::Error) -> bool {
             | std::io::ErrorKind::ConnectionAborted
             | std::io::ErrorKind::ConnectionReset
     )
+}
+
+fn dispatch_cert_update_task(
+    tls_config: &Option<TlsConfig>,
+    tls_acceptor_tx: &tokio::sync::mpsc::Sender<Option<TlsAcceptor>>,
+) {
+    let tls_config = tls_config.clone();
+    let tls_acceptor_tx = tls_acceptor_tx.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(CERT_RETRY_TIMEOUT).await;
+        let tls_acceptor = load_certs(&tls_config).await;
+        let _ = tls_acceptor_tx.send(tls_acceptor).await;
+    });
 }
 
 async fn load_certs(tls_config: &Option<TlsConfig>) -> Option<TlsAcceptor> {
