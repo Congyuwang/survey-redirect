@@ -28,7 +28,7 @@ pub async fn run_server(
     // attempt to bind to address
     let tcp_listener = TcpListener::bind(bind).await?;
     let shutdown_tx = shutdown_signal();
-    let mut tls_acceptor = None;
+    let mut tls_acceptor;
 
     // connection counter
     let (close_tx, close_rx) = tokio::sync::watch::channel(());
@@ -37,7 +37,7 @@ pub async fn run_server(
     let (_watcher, mut cert_update_signal_rx) = watch_cert_changes(tls_config)?;
 
     // load certs
-    update_certs(tls_config, &mut cert_update_signal_rx, &mut tls_acceptor).await;
+    tls_acceptor = load_certs(tls_config).await;
 
     tracing::info!("server running");
     loop {
@@ -46,9 +46,10 @@ pub async fn run_server(
             conn = tcp_listener.accept() => conn,
             _ = shutdown_tx.closed() => break,
             _ = cert_update_signal_rx.changed() => {
-                tracing::info!("certs change detected, waiting for certs to update");
+                tracing::info!("certs change detected");
                 tokio::time::sleep(CERT_RETRY_TIMEOUT).await;
-                update_certs(tls_config, &mut cert_update_signal_rx, &mut tls_acceptor).await;
+                tls_acceptor = load_certs(tls_config).await;
+                cert_update_signal_rx.mark_unchanged();
                 tracing::info!("cert updated");
                 continue;
             },
@@ -204,22 +205,17 @@ fn is_connection_error(err: &std::io::Error) -> bool {
     )
 }
 
-async fn update_certs(
-    tls_config: &Option<TlsConfig>,
-    cert_update_signal_rx: &mut tokio::sync::watch::Receiver<()>,
-    tls_acceptor: &mut Option<TlsAcceptor>,
-) {
+async fn load_certs(tls_config: &Option<TlsConfig>) -> Option<TlsAcceptor> {
     // try to load tls config if any
     let tls_config = load_certs_key(tls_config).await;
-    *tls_acceptor = tls_config.map(|tls| TlsAcceptor::from(Arc::new(tls)));
-
-    // clear any extra cert update signal
-    cert_update_signal_rx.mark_unchanged();
+    let tls_acceptor = tls_config.map(|tls| TlsAcceptor::from(Arc::new(tls)));
 
     // log a warning if notls
     if tls_acceptor.is_none() {
         tracing::warn!("serving with insecured connection.")
     }
+
+    tls_acceptor
 }
 
 async fn load_certs_key(config: &Option<TlsConfig>) -> Option<rustls::ServerConfig> {
