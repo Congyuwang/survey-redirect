@@ -17,7 +17,7 @@ use tokio_rustls::{
 use tower::Service;
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
-const CERT_RETRY_TIMEOUT: Duration = Duration::from_secs(1);
+const CERT_RETRY_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// run the server loop, handle shudown.
 pub async fn run_server(
@@ -28,7 +28,7 @@ pub async fn run_server(
     // attempt to bind to address
     let tcp_listener = TcpListener::bind(bind).await?;
     let shutdown_tx = shutdown_signal();
-    let mut tls_acceptor;
+    let mut tls_acceptor = None;
 
     // connection counter
     let (close_tx, close_rx) = tokio::sync::watch::channel(());
@@ -36,51 +36,38 @@ pub async fn run_server(
     // watch cert changes
     let (_watcher, mut cert_update_signal_rx) = watch_cert_changes(tls_config)?;
 
+    // load certs
+    update_certs(tls_config, &mut cert_update_signal_rx, &mut tls_acceptor).await;
+
+    tracing::info!("server running");
     loop {
-        // try to load tls config if any
-        let tls_config = load_certs_key(tls_config).await;
-        tls_acceptor = tls_config.map(|tls| TlsAcceptor::from(Arc::new(tls)));
+        let new_conn = tokio::select! {
+            biased;
+            conn = tcp_listener.accept() => conn,
+            _ = shutdown_tx.closed() => break,
+            _ = cert_update_signal_rx.changed() => {
+                tracing::info!("certs change detected, waiting for certs to update");
+                tokio::time::sleep(CERT_RETRY_TIMEOUT).await;
+                update_certs(tls_config, &mut cert_update_signal_rx, &mut tls_acceptor).await;
+                tracing::info!("cert updated");
+                continue;
+            },
+        };
 
-        // clear any extra cert update signal
-        cert_update_signal_rx.mark_unchanged();
-
-        // log a warning if notls
-        if tls_acceptor.is_none() {
-            tracing::warn!("serving with insecured connection.")
-        }
-
-        tracing::info!("server running");
-        let shutdown = loop {
-            let new_conn = tokio::select! {
-                biased;
-                conn = tcp_listener.accept() => conn,
-                _ = shutdown_tx.closed() => break true,
-                _ = cert_update_signal_rx.changed() => {
-                    tracing::info!("certs change detected, waiting for certs to update");
-                    tokio::time::sleep(CERT_RETRY_TIMEOUT).await;
-                    break false;
-                },
-            };
-
-            let (conn, addr) = match new_conn {
-                Ok(conn) => conn,
-                Err(err) => {
-                    handle_accept_error(err).await;
-                    continue;
-                }
-            };
-
-            let app = app.clone();
-            let close_rx = close_rx.clone();
-            if let Some(tls) = &tls_acceptor {
-                tokio::spawn(handle_conn_tls(app, conn, tls.clone(), close_rx, addr));
-            } else {
-                tokio::spawn(handle_conn(app, TokioIo::new(conn), close_rx, addr));
+        let (conn, addr) = match new_conn {
+            Ok(conn) => conn,
+            Err(err) => {
+                handle_accept_error(err).await;
+                continue;
             }
         };
 
-        if shutdown {
-            break;
+        let app = app.clone();
+        let close_rx = close_rx.clone();
+        if let Some(tls) = &tls_acceptor {
+            tokio::spawn(handle_conn_tls(app, conn, tls.clone(), close_rx, addr));
+        } else {
+            tokio::spawn(handle_conn(app, TokioIo::new(conn), close_rx, addr));
         }
     }
 
@@ -215,6 +202,24 @@ fn is_connection_error(err: &std::io::Error) -> bool {
             | std::io::ErrorKind::ConnectionAborted
             | std::io::ErrorKind::ConnectionReset
     )
+}
+
+async fn update_certs(
+    tls_config: &Option<TlsConfig>,
+    cert_update_signal_rx: &mut tokio::sync::watch::Receiver<()>,
+    tls_acceptor: &mut Option<TlsAcceptor>,
+) {
+    // try to load tls config if any
+    let tls_config = load_certs_key(tls_config).await;
+    *tls_acceptor = tls_config.map(|tls| TlsAcceptor::from(Arc::new(tls)));
+
+    // clear any extra cert update signal
+    cert_update_signal_rx.mark_unchanged();
+
+    // log a warning if notls
+    if tls_acceptor.is_none() {
+        tracing::warn!("serving with insecured connection.")
+    }
 }
 
 async fn load_certs_key(config: &Option<TlsConfig>) -> Option<rustls::ServerConfig> {

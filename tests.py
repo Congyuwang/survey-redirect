@@ -150,12 +150,12 @@ tests(True)
 # Update the certs
 gen_certs()
 # wait for server restart
-time.sleep(2)
+time.sleep(1)
 # Server should restart
 tests()
 # Update the certs
 gen_certs()
 # wait for server restart
-time.sleep(2)
+time.sleep(1)
 # Server should restart
 tests()
