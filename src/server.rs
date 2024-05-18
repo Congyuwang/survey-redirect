@@ -68,7 +68,6 @@ pub async fn run_server(
             // new cert loaded
             Some(new_tls_acceptor) = tls_acceptor_rx.recv() => {
                 tls_acceptor = new_tls_acceptor;
-                cert_update_signal_rx.mark_unchanged();
                 cert_updating.store(false, Ordering::Release);
                 tracing::info!("cert updated");
                 continue;
