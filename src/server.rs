@@ -1,5 +1,5 @@
 //! All server related code
-use crate::config::TlsConfig;
+use crate::{config::TlsConfig, DEFAULT_TIMEOUT};
 use axum::Router;
 use hyper::{body::Incoming, Request};
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -16,7 +16,6 @@ use tokio_rustls::{
 };
 use tower::Service;
 
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 const CERT_RETRY_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// run the server loop, handle shudown.
@@ -83,7 +82,7 @@ pub async fn run_server(
     );
 
     // wait for all connections to close
-    if timeout(SHUTDOWN_TIMEOUT, close_tx.closed()).await.is_err() {
+    if timeout(DEFAULT_TIMEOUT, close_tx.closed()).await.is_err() {
         tracing::warn!("failed to close all connections");
     }
 
