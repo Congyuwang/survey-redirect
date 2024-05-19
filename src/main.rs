@@ -1,4 +1,4 @@
-use crate::{config::Config, state::RouterState};
+use crate::{certs::cert_provider_from_file, config::Config, state::RouterState};
 use axum::{
     extract::DefaultBodyLimit,
     routing::{get, patch, put},
@@ -11,6 +11,7 @@ use tower_http::{
 };
 use tracing_subscriber::prelude::*;
 
+pub mod certs;
 pub mod config;
 pub mod handler;
 pub mod server;
@@ -66,8 +67,12 @@ fn main() {
     let bind = server_config.server_binding;
     tracing::info!("server listening at {}", bind);
 
+    // watch cert changes
+    let tls_cert_provider =
+        cert_provider_from_file(server_config.server_tls, &rt).expect("failed to watch cert files");
+
     // start server
-    if let Err(e) = rt.block_on(server::run_server(&app, bind, &server_config.server_tls)) {
+    if let Err(e) = rt.block_on(server::run_server(&app, bind, tls_cert_provider)) {
         tracing::error!("failed to run server {}", e);
     }
 }

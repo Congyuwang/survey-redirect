@@ -1,78 +1,79 @@
 //! All server related code
-use crate::{config::TlsConfig, DEFAULT_TIMEOUT};
+use crate::DEFAULT_TIMEOUT;
 use axum::Router;
 use hyper::{body::Incoming, Request};
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use notify::Watcher;
-use rustls_pemfile::{certs, private_key};
-use std::{
-    io::BufReader,
-    net::SocketAddr,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::{net::SocketAddr, time::Duration};
 use tokio::{
     net::{TcpListener, TcpStream},
     time::timeout,
 };
-use tokio_rustls::{
-    rustls::{self},
-    TlsAcceptor,
-};
+use tokio_rustls::TlsAcceptor;
 use tower::Service;
-
-const CERT_RETRY_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// run the server loop, handle shudown.
 pub async fn run_server(
     app: &Router,
     bind: SocketAddr,
-    tls_config: &Option<TlsConfig>,
+    mut tls_cert_provider: Option<tokio::sync::watch::Receiver<TlsAcceptor>>,
 ) -> std::io::Result<()> {
     // attempt to bind to address
     let tcp_listener = TcpListener::bind(bind).await?;
+    // shutdown signal
     let shutdown_tx = shutdown_signal();
-    let mut tls_acceptor;
-    let cert_updating = AtomicBool::new(false);
-
     // connection counter
     let (close_tx, close_rx) = tokio::sync::watch::channel(());
 
-    // watch cert changes
-    let (_watcher, mut cert_update_signal_rx) = watch_cert_changes(tls_config)?;
-
-    // new cert receive channel
-    let (tls_acceptor_tx, mut tls_acceptor_rx) = tokio::sync::mpsc::channel(1);
-
-    // load certs
-    tls_acceptor = load_certs(tls_config).await;
-
+    // main loop
     tracing::info!("server running");
+    if let Some(tls_cert_provider) = tls_cert_provider.as_mut() {
+        server_loop(
+            &tcp_listener,
+            &shutdown_tx,
+            &close_rx,
+            tls_cert_provider,
+            app,
+        )
+        .await
+    } else {
+        server_loop_notls(&tcp_listener, &shutdown_tx, &close_rx, app).await
+    }
+
+    // graceful shutdown process
+
+    // stop accepting new connections during shutdown periods
+    drop(tcp_listener);
+    // shutdown procedure: wait for connections to finish
+    drop(close_rx);
+    // wait for all connections to close
+    tracing::info!(
+        "waiting for {} task(s) to finish",
+        close_tx.receiver_count()
+    );
+    if timeout(DEFAULT_TIMEOUT, close_tx.closed()).await.is_err() {
+        tracing::warn!("failed to close all connections");
+    }
+    Ok(())
+}
+
+/// run the server loop, no tls, handle shudown.
+pub async fn server_loop(
+    tcp_listener: &TcpListener,
+    shutdown_tx: &tokio::sync::watch::Sender<()>,
+    close_rx: &tokio::sync::watch::Receiver<()>,
+    tls_cert_provider: &mut tokio::sync::watch::Receiver<TlsAcceptor>,
+    app: &Router,
+) {
+    let mut tls_acceptor = tls_cert_provider.borrow_and_update().clone();
     loop {
         let new_conn = tokio::select! {
             biased;
-            // new income connection
             conn = tcp_listener.accept() => conn,
-            // cert file changed signal
-            _ = cert_update_signal_rx.changed() => {
-                let is_cert_updating = cert_updating.swap(true, Ordering::AcqRel);
-                if !is_cert_updating {
-                    tracing::info!("certs change detected");
-                    dispatch_cert_update_task(tls_config, &tls_acceptor_tx);
-                }
-                continue;
-            },
-            // new cert loaded
-            Some(new_tls_acceptor) = tls_acceptor_rx.recv() => {
-                tls_acceptor = new_tls_acceptor;
-                cert_updating.store(false, Ordering::Release);
+            Ok(_) = tls_cert_provider.changed() => {
+                tls_acceptor = tls_cert_provider.borrow_and_update().clone();
                 tracing::info!("cert updated");
                 continue;
             }
-            // shutdown signal
             _ = shutdown_tx.closed() => break,
             else => continue,
         };
@@ -86,30 +87,38 @@ pub async fn run_server(
         };
 
         let app = app.clone();
+        let tls_acceptor = tls_acceptor.clone();
         let close_rx = close_rx.clone();
-        if let Some(tls) = &tls_acceptor {
-            tokio::spawn(handle_conn_tls(app, conn, tls.clone(), close_rx, addr));
-        } else {
-            tokio::spawn(handle_conn(app, TokioIo::new(conn), close_rx, addr));
-        }
+        tokio::spawn(handle_conn_tls(app, conn, tls_acceptor, close_rx, addr));
     }
+}
 
-    // stop accepting new connections during shutdown periods
-    drop(tcp_listener);
+/// run the server loop, no tls, handle shudown.
+pub async fn server_loop_notls(
+    tcp_listener: &TcpListener,
+    shutdown_tx: &tokio::sync::watch::Sender<()>,
+    close_rx: &tokio::sync::watch::Receiver<()>,
+    app: &Router,
+) {
+    loop {
+        let new_conn = tokio::select! {
+            biased;
+            conn = tcp_listener.accept() => conn,
+            _ = shutdown_tx.closed() => break,
+        };
 
-    // shutdown procedure: wait for connections to finish
-    drop(close_rx);
-    tracing::info!(
-        "waiting for {} task(s) to finish",
-        close_tx.receiver_count()
-    );
+        let (conn, addr) = match new_conn {
+            Ok(conn) => conn,
+            Err(err) => {
+                handle_accept_error(err).await;
+                continue;
+            }
+        };
 
-    // wait for all connections to close
-    if timeout(DEFAULT_TIMEOUT, close_tx.closed()).await.is_err() {
-        tracing::warn!("failed to close all connections");
+        let app = app.clone();
+        let close_rx = close_rx.clone();
+        tokio::spawn(handle_conn(app, TokioIo::new(conn), close_rx, addr));
     }
-
-    Ok(())
 }
 
 /// handle tls connection
@@ -225,111 +234,4 @@ fn is_connection_error(err: &std::io::Error) -> bool {
             | std::io::ErrorKind::ConnectionAborted
             | std::io::ErrorKind::ConnectionReset
     )
-}
-
-fn dispatch_cert_update_task(
-    tls_config: &Option<TlsConfig>,
-    tls_acceptor_tx: &tokio::sync::mpsc::Sender<Option<TlsAcceptor>>,
-) {
-    let tls_config = tls_config.clone();
-    let tls_acceptor_tx = tls_acceptor_tx.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(CERT_RETRY_TIMEOUT).await;
-        let tls_acceptor = load_certs(&tls_config).await;
-        let _ = tls_acceptor_tx.send(tls_acceptor).await;
-    });
-}
-
-async fn load_certs(tls_config: &Option<TlsConfig>) -> Option<TlsAcceptor> {
-    // try to load tls config if any
-    let tls_config = load_certs_key(tls_config).await;
-    let tls_acceptor = tls_config.map(|tls| TlsAcceptor::from(Arc::new(tls)));
-
-    // log a warning if notls
-    if tls_acceptor.is_none() {
-        tracing::warn!("serving with insecured connection.")
-    }
-
-    tls_acceptor
-}
-
-async fn load_certs_key(config: &Option<TlsConfig>) -> Option<rustls::ServerConfig> {
-    loop {
-        if let Some(tls_config) = config.as_ref() {
-            match tokio::task::block_in_place(|| load_certs_key_sync(tls_config)) {
-                Ok(tls_config) => break Some(tls_config),
-                Err(e) => {
-                    tracing::error!("failed to load certs {}, retrying...", e);
-                    tokio::time::sleep(CERT_RETRY_TIMEOUT).await;
-                    continue;
-                }
-            }
-        } else {
-            break None;
-        }
-    }
-}
-
-/// load certificates and private keys from file (BLOCKING!!).
-fn load_certs_key_sync(config: &TlsConfig) -> std::io::Result<rustls::ServerConfig> {
-    let mut cert = BufReader::new(std::fs::File::open(&config.cert)?);
-    let mut key = BufReader::new(std::fs::File::open(&config.key)?);
-
-    let cert_chain = certs(&mut cert).collect::<std::io::Result<Vec<_>>>()?;
-    let key_der = private_key(&mut key)?.ok_or(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        format!("private key not found in {}", config.key.display()),
-    ))?;
-
-    let mut tls_config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(cert_chain, key_der)
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("error configuring certs {e}"),
-            )
-        })?;
-
-    tls_config.alpn_protocols = vec![b"http/1.1".to_vec()];
-
-    Ok(tls_config)
-}
-
-/// enable automatic certificate update
-fn watch_cert_changes(
-    tls_config: &Option<TlsConfig>,
-) -> std::io::Result<(notify::RecommendedWatcher, tokio::sync::watch::Receiver<()>)> {
-    let (cert_update_signal_tx, cert_update_signal_rx) = tokio::sync::watch::channel(());
-    let mut cert_watcher =
-        notify::recommended_watcher(move |event: Result<notify::Event, notify::Error>| {
-            if event.is_ok() {
-                let _ = cert_update_signal_tx.send(());
-            }
-        })
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("failed to init cert watcher {}", e),
-            )
-        })?;
-    if let Some(config) = tls_config {
-        cert_watcher
-            .watch(&config.cert, notify::RecursiveMode::NonRecursive)
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("failed to watch cert {}", e),
-                )
-            })?;
-        cert_watcher
-            .watch(&config.key, notify::RecursiveMode::NonRecursive)
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("failed to watch key {}", e),
-                )
-            })?;
-    }
-    Ok((cert_watcher, cert_update_signal_rx))
 }
