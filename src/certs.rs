@@ -1,7 +1,7 @@
 use crate::config::TlsConfig;
 use notify::Watcher as _;
 use rustls_pemfile::{certs, private_key};
-use std::{io::BufReader, sync::Arc, time::Duration};
+use std::{io::BufReader, path::PathBuf, sync::Arc, time::Duration};
 use tokio::runtime::Runtime;
 use tokio_rustls::{
     rustls::{self},
@@ -15,13 +15,15 @@ const CERT_RETRY_TIMEOUT: Duration = Duration::from_millis(500);
 /// (involves BLOCKING operations!!!)
 pub fn cert_provider_from_file(
     tls_config: Option<TlsConfig>,
+    watch_cert_changes_path: &Option<PathBuf>,
     rt: &Runtime,
 ) -> std::io::Result<Option<tokio::sync::watch::Receiver<TlsAcceptor>>> {
     let Some(tls_config) = tls_config else {
         tracing::warn!("serving with insecured connection.");
         return Ok(None);
     };
-    let (watcher, mut cert_update_signal_rx) = watch_cert_changes(&tls_config)?;
+    let (watcher, mut cert_update_signal_rx) =
+        watch_cert_changes(&tls_config, watch_cert_changes_path)?;
     let init_cert = build_tls_acceptor_sync(&tls_config)?;
     let (tls_acceptor_tx, tls_acceptor_rx) = tokio::sync::watch::channel(init_cert);
     rt.spawn(async move {
@@ -92,6 +94,7 @@ fn load_certs_key(config: &TlsConfig) -> std::io::Result<rustls::ServerConfig> {
 /// monitor certificate changes.
 fn watch_cert_changes(
     tls_config: &TlsConfig,
+    watch_cert_changes_path: &Option<PathBuf>,
 ) -> std::io::Result<(notify::RecommendedWatcher, tokio::sync::watch::Receiver<()>)> {
     let (cert_update_signal_tx, cert_update_signal_rx) = tokio::sync::watch::channel(());
     let mut cert_watcher =
@@ -106,21 +109,32 @@ fn watch_cert_changes(
                 format!("failed to init cert watcher {}", e),
             )
         })?;
-    cert_watcher
-        .watch(&tls_config.cert, notify::RecursiveMode::NonRecursive)
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("failed to watch cert {}", e),
-            )
-        })?;
-    cert_watcher
-        .watch(&tls_config.key, notify::RecursiveMode::NonRecursive)
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("failed to watch key {}", e),
-            )
-        })?;
+    if let Some(path) = watch_cert_changes_path {
+        cert_watcher
+            .watch(path, notify::RecursiveMode::Recursive)
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("failed to watch cert path {}", e),
+                )
+            })?;
+    } else {
+        cert_watcher
+            .watch(&tls_config.cert, notify::RecursiveMode::NonRecursive)
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("failed to watch cert {}", e),
+                )
+            })?;
+        cert_watcher
+            .watch(&tls_config.key, notify::RecursiveMode::NonRecursive)
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("failed to watch key {}", e),
+                )
+            })?;
+    }
     Ok((cert_watcher, cert_update_signal_rx))
 }

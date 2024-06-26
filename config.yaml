@@ -6,3 +6,4 @@ log_file: "survey_redirect.log"
 server_tls:
   cert: "./dev_certs/localhost.crt"
   key: "./dev_certs/localhost.key"
+watch_cert_changes: "./dev_certs"

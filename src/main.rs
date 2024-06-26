@@ -68,8 +68,12 @@ fn main() {
     tracing::info!("server listening at {}", bind);
 
     // watch cert changes
-    let tls_cert_provider =
-        cert_provider_from_file(server_config.server_tls, &rt).expect("failed to watch cert files");
+    let tls_cert_provider = cert_provider_from_file(
+        server_config.server_tls,
+        &server_config.watch_cert_changes,
+        &rt,
+    )
+    .expect("failed to watch cert files");
 
     // start server
     if let Err(e) = rt.block_on(server::run_server(&app, bind, tls_cert_provider)) {

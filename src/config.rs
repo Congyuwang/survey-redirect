@@ -11,6 +11,7 @@ pub struct Config {
     pub admin_token: String,
     pub storage_root: PathBuf,
     pub log_file: PathBuf,
+    pub watch_cert_changes: Option<PathBuf>,
     pub server_tls: Option<TlsConfig>,
 }
 
