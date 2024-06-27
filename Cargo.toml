@@ -25,7 +25,7 @@ hyper-util = { version = "0.1", default-features = false, features = [
     "http1",
     "tokio",
 ] }
-notify = { version = "6.1.1", default-features = false, features = [
+notify = { version = "6", default-features = false, features = [
     "macos_kqueue",
 ] }
 rand = "0"
@@ -61,4 +61,4 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "chrono",
     "parking_lot",
 ] }
-url = { version = "2.4", default-features = false, features = ["serde"] }
+url = { version = "2", default-features = false, features = ["serde"] }
