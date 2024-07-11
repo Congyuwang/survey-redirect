@@ -86,6 +86,8 @@ pub async fn server_loop(
             }
         };
 
+        tracing::debug!("new connection from {}", addr);
+
         let app = app.clone();
         let tls_acceptor = tls_acceptor.clone();
         let close_rx = close_rx.clone();
@@ -115,6 +117,8 @@ pub async fn server_loop_notls(
             }
         };
 
+        tracing::debug!("new connection from {}", addr);
+
         let app = app.clone();
         let close_rx = close_rx.clone();
         tokio::spawn(handle_conn(app, TokioIo::new(conn), close_rx, addr));
@@ -129,10 +133,14 @@ async fn handle_conn_tls(
     close_rx: tokio::sync::watch::Receiver<()>,
     addr: SocketAddr,
 ) {
+    // tls handshake timeout
+    let tls_stream = tls_acceptor.accept(con);
+    let timeout_acceptor = timeout(DEFAULT_TIMEOUT, tls_stream);
     // tls handshake
-    let Ok(stream) = tls_acceptor.accept(con).await else {
+    let Ok(Ok(stream)) = timeout_acceptor.await else {
         // quickly ignore all tls handshake failure.
         // deny non-secured connections.
+        tracing::debug!("tls handshake failure or timeout for {}", addr);
         return;
     };
     handle_conn(app, TokioIo::new(stream), close_rx, addr).await;
@@ -167,7 +175,7 @@ async fn handle_conn<I: hyper::rt::Read + hyper::rt::Write + Unpin + 'static>(
             .downcast_ref::<std::io::Error>()
             .is_some_and(|e| e.kind() == std::io::ErrorKind::UnexpectedEof)
         {
-            tracing::trace!("error serving connection from {}: {}", addr, err)
+            tracing::debug!("error serving connection from {}: {}", addr, err)
         }
     }
 
