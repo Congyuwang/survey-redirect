@@ -7,7 +7,6 @@ use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, MutexGuard, RwLock};
-use tracing::info;
 use url::Url;
 
 #[derive(Deserialize, Serialize, Clone, Hash, PartialEq, Eq)]
@@ -51,21 +50,21 @@ impl RouterState {
         let store = config.storage_root.clone();
         let router_table = match load_latest_router_table(&store).map_err(StateError::StoreError)? {
             Some((time, table)) => {
-                info!("router table loaded (time={time})");
+                tracing::info!("router table loaded (time={time})");
                 Arc::new(RwLock::new(table))
             }
             None => {
-                info!("new router table created");
+                tracing::info!("new router table created");
                 Arc::new(RwLock::new(HashMap::new()))
             }
         };
         let code_table = match load_latest_code_table(&store).map_err(StateError::StoreError)? {
             Some(table) => {
-                info!("code table loaded");
+                tracing::info!("code table loaded");
                 Arc::new(Mutex::new(table))
             }
             None => {
-                info!("new code table created");
+                tracing::info!("new code table created");
                 Arc::new(Mutex::new(HashMap::new()))
             }
         };
